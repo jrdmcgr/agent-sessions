@@ -27,8 +27,10 @@ func main() {
    today. Rows are session-days; totals sum the range." epilog) and return 0.
 2. `resolveRange` → start/end. Build `days map[time.Time]bool` covering start..end inclusive
    (nil for --all).
-3. Discover files (task 06's `discoverIn` with the injected roots, cutoff `start`), parse each
-   with its reader, skip nils, then apply session-level filters:
+3. Discover files: call task 06's `discoverIn(piRoot, claudeRoot, readPiSession, readClaudeSession, start)`
+   using the roots injected into `run` (not `piSessionsDir()`/`claudeSessionsDir()` directly —
+   those are only the defaults `main()` passes in). Parse each discovered file with its
+   paired reader, skip nils, then apply session-level filters:
    - `--harness` mismatch → skip.
    - `--project`: case-insensitive substring match against `s.CWD` (`strings.Contains` on
      lowered strings).

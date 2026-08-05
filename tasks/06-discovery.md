@@ -2,9 +2,17 @@
 
 ## Context
 
-Read `PLAN.md`. Depends on task 01. Ports `decode_slug` and `discover` from
-`~/Code/dotfiles/bin/sessions` — read them first. If tasks 04/05 landed a temporary
-`decodeSlug` stub (their instructions allow one), delete the stub and own the function here.
+Read `PLAN.md`. Depends on task 01 only — do not wait on tasks 04/05. Ports `decode_slug`
+and `discover` from `~/Code/dotfiles/bin/sessions` — read them first. If tasks 04/05 landed a
+temporary `decodeSlug` stub (their instructions allow one), delete the stub and own the
+function here.
+
+`discoverIn` takes the two readers as parameters instead of calling `readPiSession`/
+`readClaudeSession` by name. That is the only deliberate deviation from the Python (which has
+a module-level `discover()` that hardcodes both readers) — it exists so this file, and its
+tests, build and pass standalone against task 01 alone, with no dependency on tasks 04/05.
+Task 11 (main wiring) calls `discoverIn` directly, passing `readPiSession`/`readClaudeSession`
+as the reader arguments — there is no separate `discover()` wrapper anywhere in this codebase.
 
 ## Deliverable: `discover.go`
 
@@ -24,16 +32,13 @@ type discoveredFile struct {
 	reader sessionReader
 }
 
-// discoverIn scans the two roots for "*/*.jsonl" files (exactly one directory
-// deep, sorted lexically by full path within each root, pi root first) whose
-// mtime is >= cutoff. A zero cutoff means no filtering. Roots that don't
-// exist are skipped; files that can't be stat'ed are skipped.
-func discoverIn(piRoot, claudeRoot string, cutoff time.Time) []discoveredFile
-
-// discover calls discoverIn with the real roots (piSessionsDir(),
-// claudeSessionsDir()) and a cutoff of local midnight of `since`
-// (dayOf(since)), or zero cutoff if since is the zero time.
-func discover(since time.Time) []discoveredFile
+// discoverIn scans piRoot and claudeRoot for "*/*.jsonl" files (exactly one
+// directory deep, sorted lexically by full path within each root, pi root's
+// files before claude root's) whose mtime is >= cutoff. A zero cutoff means
+// no filtering. Roots that don't exist are skipped; files that can't be
+// stat'ed are skipped. Every file under piRoot is paired with piReader in
+// the result; every file under claudeRoot is paired with claudeReader.
+func discoverIn(piRoot, claudeRoot string, piReader, claudeReader sessionReader, cutoff time.Time) []discoveredFile
 ```
 
 Implementation notes:
@@ -41,12 +46,18 @@ Implementation notes:
 - Use `filepath.Glob(filepath.Join(root, "*", "*.jsonl"))` — glob results are already sorted.
 - mtime comparison: keep the file when `!info.ModTime().Before(cutoff)` (Python keeps
   `mtime >= cutoff`; "last write can't precede work").
-- `discoverIn` exists so tests can point at temp roots; `discover` is a thin wrapper.
-- The reader for files under `piRoot` is `readPiSession`; under `claudeRoot`,
-  `readClaudeSession`. **Execute this task only after tasks 04 and 05 are merged** — those
-  functions must already exist or the build fails.
+- Do not add a `discover(since time.Time) []discoveredFile` wrapper function. It is
+  deliberately not part of this task (see Context) — adding it anyway just reintroduces the
+  04/05 build dependency this task exists to avoid.
 
 ## Deliverable: `discover_test.go`
+
+Pass small stub `sessionReader` values as the two reader arguments — e.g. two distinct
+closures like `func(string) *Session { return nil }` assigned to named variables, so you can
+assert which stub ended up on which `discoveredFile` (compare with
+`reflect.ValueOf(f.reader).Pointer()`, or simpler: give each stub a unique sentinel behavior
+and call `f.reader("")` in the assertion, comparing results). `discoverIn` never calls the
+readers itself; it only attaches them.
 
 Build a temp tree:
 
@@ -60,18 +71,20 @@ tmp/claude/slugB/b.jsonl    (mtime: now)
 
 Assert:
 
-- zero cutoff → exactly `a.jsonl`, `old.jsonl`, `b.jsonl`, pi files first, sorted.
+- zero cutoff → exactly `a.jsonl`, `old.jsonl`, `b.jsonl`, pi files first, sorted; the pi
+  files carry the pi stub reader, `b.jsonl` carries the claude stub reader.
 - cutoff = yesterday midnight → `old.jsonl` excluded.
 - nonexistent roots → empty slice, no panic.
 - `decodeSlug("-Users-JaredMcGuire-Code-dotfiles")` → `/Users/JaredMcGuire/Code/dotfiles`;
   `decodeSlug("")` → `/`.
 
-## Acceptance criteria
+## Acceptance criteria (all must exit 0)
 
 ```sh
 cd ~/Code/agent-sessions
-go build ./... && go vet ./... && go test -run 'TestDiscover|TestDecodeSlug' ./...
+go build ./... && go vet ./... && go test -run 'TestDiscoverIn|TestDecodeSlug' ./...
 grep -c 'func decodeSlug' *.go   # must print 1 for exactly one file
+grep -c 'func discover(' *.go    # must print 0 — no discover() wrapper in this codebase
 ```
 
 ## Out of scope
