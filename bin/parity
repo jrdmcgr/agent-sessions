@@ -1,0 +1,136 @@
+#!/bin/sh
+# Compare Go and Python `sessions` output. Exits nonzero on any divergence.
+set -eu
+
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+PYTHON_SESSIONS="$HOME/Code/dotfiles/bin/sessions"
+GO_BIN="${TMPDIR:-/tmp}/sessions-go.$$"
+
+cleanup() {
+	rm -f "$GO_BIN"
+}
+trap cleanup EXIT
+
+status=0
+
+echo "building $GO_BIN ..."
+(cd "$REPO_ROOT" && go build -o "$GO_BIN" .)
+
+# jq filter: sort keys, then round cost to 4 decimals so float formatting
+# differences between Python and Go don't count as divergence.
+NORMALIZE='.[] |= (.cost = ((.cost * 10000 | round) / 10000))'
+
+json_case() {
+	# $@ = flags to pass to both implementations.
+	label="$*"
+	py_raw="$(mktemp)"
+	go_raw="$(mktemp)"
+	py_norm="$(mktemp)"
+	go_norm="$(mktemp)"
+
+	# shellcheck disable=SC2068
+	"$PYTHON_SESSIONS" $@ >"$py_raw" 2>/dev/null || true
+	"$GO_BIN" $@ >"$go_raw" 2>/dev/null || true
+
+	jq -S "$NORMALIZE" "$py_raw" >"$py_norm" 2>/dev/null || cp "$py_raw" "$py_norm"
+	jq -S "$NORMALIZE" "$go_raw" >"$go_norm" 2>/dev/null || cp "$go_raw" "$go_norm"
+
+	if diff -u "$py_norm" "$go_norm" >/tmp/parity-json.diff; then
+		echo "OK $label"
+	else
+		echo "DIFF $label"
+		cat /tmp/parity-json.diff
+		status=1
+	fi
+
+	rm -f "$py_raw" "$go_raw" "$py_norm" "$go_norm"
+}
+
+echo
+echo "== JSON parity =="
+json_case --all --json
+json_case --json
+json_case --week --json
+json_case --week -1 --json
+json_case --yesterday --json
+json_case --since 2026-01-01 --until 2026-06-30 --json
+json_case --project agent --json
+json_case --harness pi --json
+json_case --harness claude --json
+json_case --active --json
+json_case --temp --all --json
+
+# ---------------------------------------------------------------- table parity
+
+table_case() {
+	# $@ = flags to pass to both implementations (no --json). Runs both
+	# within the same second so the "active" flag (last 2h window) can't
+	# flip between the two invocations; a rare flake near a second
+	# boundary means rerun.
+	label="$*"
+	py_out="$(mktemp)"
+	go_out="$(mktemp)"
+
+	while :; do
+		start_sec="$(date +%s)"
+		# shellcheck disable=SC2068
+		"$PYTHON_SESSIONS" $@ >"$py_out" 2>/dev/null || true
+		"$GO_BIN" $@ >"$go_out" 2>/dev/null || true
+		end_sec="$(date +%s)"
+		[ "$start_sec" = "$end_sec" ] && break
+	done
+
+	if diff -u "$py_out" "$go_out" >/tmp/parity-table.diff; then
+		echo "OK table: $label"
+	else
+		echo "DIFF table: $label"
+		cat /tmp/parity-table.diff
+		status=1
+	fi
+
+	rm -f "$py_out" "$go_out"
+}
+
+echo
+echo "== Table parity (byte-for-byte) =="
+table_case --all
+table_case --week
+table_case
+
+# --------------------------------------------------------------- exit codes
+
+echo
+echo "== Exit code parity =="
+
+py_code=0
+"$PYTHON_SESSIONS" --harness bogus --json >/dev/null 2>&1 || py_code=$?
+go_code=0
+"$GO_BIN" --harness bogus --json >/dev/null 2>&1 || go_code=$?
+
+if [ "$py_code" = 2 ] && [ "$go_code" = 2 ]; then
+	echo "OK exit-code: --harness bogus (python=$py_code go=$go_code)"
+else
+	echo "DIFF exit-code: --harness bogus (python=$py_code go=$go_code, expected both 2)"
+	status=1
+fi
+
+py_code=0
+"$PYTHON_SESSIONS" --all --json >/dev/null 2>&1 || py_code=$?
+go_code=0
+"$GO_BIN" --all --json >/dev/null 2>&1 || go_code=$?
+
+if [ "$py_code" = 0 ] && [ "$go_code" = 0 ]; then
+	echo "OK exit-code: --all --json (python=$py_code go=$go_code)"
+else
+	echo "DIFF exit-code: --all --json (python=$py_code go=$go_code, expected both 0)"
+	status=1
+fi
+
+echo
+if [ "$status" = 0 ]; then
+	echo "ALL OK"
+else
+	echo "PARITY FAILURES DETECTED"
+fi
+
+exit "$status"
