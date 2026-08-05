@@ -6,6 +6,22 @@ Read `PLAN.md`. Depends on tasks 01 and 03 (uses `price`, `shortModel`). Ports `
 `fallback_name`, and the `NOISE_PREFIXES` behavior from `~/Code/dotfiles/bin/sessions` — read
 those functions first; they are the spec.
 
+## Workspace: use a git worktree
+
+Other tasks may be running in parallel against the same repo. Isolate this task in its own
+git worktree so it can never collide with another task's in-progress edits:
+
+```sh
+cd ~/Code/agent-sessions
+git worktree add -b task-07-aggregation ../agent-sessions-task-07
+cd ../agent-sessions-task-07
+```
+
+Do every remaining step — reading, editing, building, testing, committing — inside
+`../agent-sessions-task-07`, on the `task-07-aggregation` branch. Never edit files in
+`~/Code/agent-sessions` directly. Do not merge, rebase, or push, and do not remove the
+worktree; leave both the branch and the worktree in place for the coordinator to merge.
+
 ## Deliverable: `aggregate.go`
 
 ```go

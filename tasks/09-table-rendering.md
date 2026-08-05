@@ -6,6 +6,28 @@ Read `PLAN.md`. Depends on tasks 01 and 08. Ports `render_table` from
 `~/Code/dotfiles/bin/sessions` — read it first; output must be byte-identical to the Python
 for the same rows (task 12 diffs them).
 
+**Task 08 must already be merged into the branch/commit this task starts from** — this task
+calls the real `humanizeDuration`/`humanizeModels`/`humanizeTokens` and needs their actual
+rounding behavior for byte-identical output, not just their signatures. If those functions
+are missing when you start, stop and report that task 08 is not yet available; do not stub
+them yourself.
+
+## Workspace: use a git worktree
+
+Other tasks may be running in parallel against the same repo. Isolate this task in its own
+git worktree so it can never collide with another task's in-progress edits:
+
+```sh
+cd ~/Code/agent-sessions
+git worktree add -b task-09-table ../agent-sessions-task-09
+cd ../agent-sessions-task-09
+```
+
+Do every remaining step — reading, editing, building, testing, committing — inside
+`../agent-sessions-task-09`, on the `task-09-table` branch. Never edit files in
+`~/Code/agent-sessions` directly. Do not merge, rebase, or push, and do not remove the
+worktree; leave both the branch and the worktree in place for the coordinator to merge.
+
 ## Deliverable: `table.go`
 
 ```go

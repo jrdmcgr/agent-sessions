@@ -6,6 +6,22 @@ Read `PLAN.md`. Depends on task 01 only. Ports the `argparse` setup, `parse_day`
 `week_bounds`, and `resolve_range` from `~/Code/dotfiles/bin/sessions` — read them first.
 Go's `flag` package can't express `--week [OFFSET]` with an optional value, so parse by hand.
 
+## Workspace: use a git worktree
+
+Other tasks may be running in parallel against the same repo. Isolate this task in its own
+git worktree so it can never collide with another task's in-progress edits:
+
+```sh
+cd ~/Code/agent-sessions
+git worktree add -b task-10-cli ../agent-sessions-task-10
+cd ../agent-sessions-task-10
+```
+
+Do every remaining step — reading, editing, building, testing, committing — inside
+`../agent-sessions-task-10`, on the `task-10-cli` branch. Never edit files in
+`~/Code/agent-sessions` directly. Do not merge, rebase, or push, and do not remove the
+worktree; leave both the branch and the worktree in place for the coordinator to merge.
+
 ## Deliverable: `cli.go`
 
 ```go

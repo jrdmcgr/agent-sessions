@@ -5,6 +5,22 @@
 Read `PLAN.md`. Depends on task 01 only. Ports `humanize_tokens`, `humanize_duration`,
 `humanize_models` from `~/Code/dotfiles/bin/sessions` — read them first.
 
+## Workspace: use a git worktree
+
+Other tasks may be running in parallel against the same repo. Isolate this task in its own
+git worktree so it can never collide with another task's in-progress edits:
+
+```sh
+cd ~/Code/agent-sessions
+git worktree add -b task-08-format ../agent-sessions-task-08
+cd ../agent-sessions-task-08
+```
+
+Do every remaining step — reading, editing, building, testing, committing — inside
+`../agent-sessions-task-08`, on the `task-08-format` branch. Never edit files in
+`~/Code/agent-sessions` directly. Do not merge, rebase, or push, and do not remove the
+worktree; leave both the branch and the worktree in place for the coordinator to merge.
+
 ## Deliverable: `format.go`
 
 ```go
