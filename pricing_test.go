@@ -48,9 +48,20 @@ func TestPrice(t *testing.T) {
 		if got == nil {
 			t.Fatal("price returned nil for alias")
 		}
-		want := 3.0 + 15.0 + 3.75 + 0.3
+		want := 2.0 + 10.0 + 2.5 + 0.2
 		if *got != want {
 			t.Errorf("price = %v, want %v", *got, want)
+		}
+	})
+
+	t.Run("dated snapshot falls back to bare model rates", func(t *testing.T) {
+		dated := price("claude-haiku-4-5-20251001", Usage{Input: 1_000_000})
+		bare := price("claude-haiku-4-5", Usage{Input: 1_000_000})
+		if dated == nil || bare == nil {
+			t.Fatal("price returned nil")
+		}
+		if *dated != *bare {
+			t.Errorf("dated price = %v, want %v (bare model rate)", *dated, *bare)
 		}
 	})
 

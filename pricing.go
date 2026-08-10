@@ -1,6 +1,9 @@
 package main
 
-import "strings"
+import (
+	"regexp"
+	"strings"
+)
 
 // rates are USD per million tokens.
 type rates struct {
@@ -19,6 +22,7 @@ var pricing = map[string]rates{
 	"claude-opus-4-7":   {5, 25, 6.25, 0.5},
 	"claude-opus-4-1":   {15, 75, 18.75, 1.5},
 	"claude-opus-4":     {15, 75, 18.75, 1.5},
+	"claude-sonnet-5":   {2, 10, 2.5, 0.2},
 	"claude-sonnet-4-5": {3, 15, 3.75, 0.3},
 	"claude-sonnet-4":   {3, 15, 3.75, 0.3},
 	"claude-haiku-4-5":  {1, 5, 1.25, 0.1},
@@ -30,9 +34,15 @@ var pricing = map[string]rates{
 // Claude Code writes bare aliases when a session is started with one.
 var modelAliases = map[string]string{
 	"opus":   "claude-opus-5",
-	"sonnet": "claude-sonnet-4-5",
+	"sonnet": "claude-sonnet-5",
 	"haiku":  "claude-haiku-4-5",
 }
+
+// dateSuffix matches a trailing "-YYYYMMDD" snapshot pin, e.g. the
+// "-20251001" in "claude-haiku-4-5-20251001". Anthropic bills dated
+// snapshots at the same rate as the bare model name, so price() strips it
+// before falling back to a lookup miss.
+var dateSuffix = regexp.MustCompile(`-\d{8}$`)
 
 // shortModel ports short_model: "" -> ""; resolve alias; take the part after
 // the last "/"; strip a leading "claude-" prefix.
@@ -50,13 +60,17 @@ func shortModel(model string) string {
 }
 
 // price ports price: cost in USD for usage under model's rates, or nil if
-// the model (after alias resolution) isn't in the pricing table.
+// the model (after alias resolution and date-snapshot stripping) isn't in
+// the pricing table.
 func price(model string, u Usage) *float64 {
 	resolved := model
 	if r, ok := modelAliases[model]; ok {
 		resolved = r
 	}
 	r, ok := pricing[resolved]
+	if !ok {
+		r, ok = pricing[dateSuffix.ReplaceAllString(resolved, "")]
+	}
 	if !ok {
 		return nil
 	}
