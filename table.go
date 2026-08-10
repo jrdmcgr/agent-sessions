@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"io"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
@@ -64,11 +66,19 @@ func renderTable(w, errW io.Writer, rows []Row, showDate, plain bool) {
 	var totalCost float64
 	allPriced := true
 	var totalTime time.Duration
+	var unpricedModels []string
+	seenUnpriced := map[string]bool{}
 	for _, r := range rows {
 		totalTokens += r.Tokens
 		totalCost += r.Cost
 		if !r.Priced {
 			allPriced = false
+			for _, m := range r.Unpriced {
+				if !seenUnpriced[m] {
+					seenUnpriced[m] = true
+					unpricedModels = append(unpricedModels, m)
+				}
+			}
 		}
 		totalTime += r.End.Sub(r.Start)
 	}
@@ -123,7 +133,8 @@ func renderTable(w, errW io.Writer, rows []Row, showDate, plain bool) {
 	fmt.Fprintln(w, t.Render())
 
 	if !allPriced {
-		fmt.Fprint(errW, "\n? = includes an unpriced model; cost is a lower bound.\n")
+		sort.Strings(unpricedModels)
+		fmt.Fprintf(errW, "\n? = includes an unpriced model (%s); cost is a lower bound.\n", strings.Join(unpricedModels, ", "))
 	}
 }
 

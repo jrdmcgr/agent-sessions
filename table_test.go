@@ -23,17 +23,18 @@ func mkTestRows() []Row {
 			Priced:  true,
 		},
 		{
-			Date:    dayOf(base),
-			Project: "dotfiles",
-			Name:    "a-much-longer-session-name",
-			Active:  false,
-			Start:   base.Add(2 * time.Hour),
-			End:     base.Add(2*time.Hour + 5*time.Minute),
-			Harness: "claude",
-			Models:  []string{"gpt-5-mystery"},
-			Tokens:  500,
-			Cost:    0.5,
-			Priced:  false,
+			Date:     dayOf(base),
+			Project:  "dotfiles",
+			Name:     "a-much-longer-session-name",
+			Active:   false,
+			Start:    base.Add(2 * time.Hour),
+			End:      base.Add(2*time.Hour + 5*time.Minute),
+			Harness:  "claude",
+			Models:   []string{"gpt-5-mystery"},
+			Tokens:   500,
+			Cost:     0.5,
+			Priced:   false,
+			Unpriced: []string{"gpt-5-mystery"},
 		},
 	}
 }
@@ -68,7 +69,7 @@ func TestRenderTableWithDateUnpriced(t *testing.T) {
 		t.Errorf("stdout mismatch\ngot:\n%s\nwant:\n%s", w.String(), want)
 	}
 
-	wantErr := "\n? = includes an unpriced model; cost is a lower bound.\n"
+	wantErr := "\n? = includes an unpriced model (gpt-5-mystery); cost is a lower bound.\n"
 	if errW.String() != wantErr {
 		t.Errorf("errW = %q, want %q", errW.String(), wantErr)
 	}
