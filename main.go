@@ -108,6 +108,9 @@ func run(argv []string, piRoot, claudeRoot string, stdout, stderr io.Writer, now
 			if opts.active && !row.Active {
 				continue
 			}
+			if row.Name == "(unnamed)" && row.Cost == 0 && !row.Active {
+				continue
+			}
 			rows = append(rows, row)
 		}
 	}
