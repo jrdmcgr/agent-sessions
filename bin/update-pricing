@@ -1,0 +1,103 @@
+#!/bin/sh
+# Regenerate the `pricing` map in pricing.go from LiteLLM's published rate
+# card. Prints a diff-style summary of what changed and exits nonzero if
+# pricing.go was already up to date (nothing to commit), so it's safe to
+# wire into a "check for updates" habit without spamming empty diffs.
+set -eu
+
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+PRICING_GO="$REPO_ROOT/pricing.go"
+SOURCE_URL="https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json"
+JSON="${TMPDIR:-/tmp}/litellm-prices.$$.json"
+
+cleanup() {
+	rm -f "$JSON"
+}
+trap cleanup EXIT
+
+echo "fetching $SOURCE_URL ..." >&2
+curl -fsSL "$SOURCE_URL" -o "$JSON"
+
+# Map of our pricing-table key -> the LiteLLM key that carries its rates.
+# Most models match LiteLLM's bare "claude-*" key directly; a few only exist
+# there under a dated or provider-qualified name, so this table pins the
+# lookup explicitly. Add a new line here (and only here) to track a new
+# model — the Go map below is fully generated from this list.
+MODELS='
+claude-opus-5|claude-opus-5
+claude-opus-4-8|claude-opus-4-8
+claude-opus-4-7|claude-opus-4-7
+claude-opus-4-1|claude-opus-4-1
+claude-opus-4|claude-opus-4-20250514
+claude-sonnet-4-5|claude-sonnet-4-5
+claude-sonnet-4|claude-sonnet-4-20250514
+claude-haiku-4-5|claude-haiku-4-5
+claude-3-5-haiku|anthropic.claude-3-5-haiku-20241022-v1:0
+'
+
+rows=""
+missing=""
+while IFS='|' read -r ourkey srckey; do
+	[ -z "$ourkey" ] && continue
+	# Each field inlines its own round-to-6-decimals formula rather than
+	# sharing a `def usd: ...`: jq 1.7.1 miscomputes a shared def's result
+	# for every use but the last when chained with `,` or `[...]` (verified
+	# against jq -n 'def f: (.*1000000|round)/1000000; 1|f, 2|f' emitting
+	# 1000000 then 2 instead of 1 then 2) — inlining sidesteps it.
+	rates="$(jq -r --arg k "$srckey" '
+		.[$k] as $m
+		| select($m != null and $m.input_cost_per_token != null and $m.output_cost_per_token != null and $m.cache_creation_input_token_cost != null and $m.cache_read_input_token_cost != null)
+		| [
+			($m.input_cost_per_token * 1000000 * 1000000 | round) / 1000000,
+			($m.output_cost_per_token * 1000000 * 1000000 | round) / 1000000,
+			($m.cache_creation_input_token_cost * 1000000 * 1000000 | round) / 1000000,
+			($m.cache_read_input_token_cost * 1000000 * 1000000 | round) / 1000000
+		]
+		| @tsv
+	' "$JSON")"
+	if [ -z "$rates" ]; then
+		missing="$missing$ourkey (source key \"$srckey\" not found)\n"
+		continue
+	fi
+	in=$(printf '%s' "$rates" | cut -f1)
+	out=$(printf '%s' "$rates" | cut -f2)
+	cw=$(printf '%s' "$rates" | cut -f3)
+	cr=$(printf '%s' "$rates" | cut -f4)
+	rows="$rows\t\"$ourkey\": {$in, $out, $cw, $cr},\n"
+done <<EOF
+$MODELS
+EOF
+
+if [ -n "$missing" ]; then
+	printf 'warning: could not find pricing for:\n%b' "$missing" >&2
+fi
+
+if [ -z "$rows" ]; then
+	echo "no pricing rows resolved; aborting without touching pricing.go" >&2
+	exit 1
+fi
+
+BLOCK_FILE="${TMPDIR:-/tmp}/litellm-pricing-block.$$.go"
+{
+	echo "var pricing = map[string]rates{"
+	printf '%b' "$rows"
+	echo "}"
+} > "$BLOCK_FILE"
+
+awk -v blockfile="$BLOCK_FILE" '
+	/\/\/ pricing:generated:begin/ { print; while ((getline line < blockfile) > 0) print line; skip=1; next }
+	/\/\/ pricing:generated:end/   { skip=0 }
+	skip { next }
+	{ print }
+' "$PRICING_GO" > "$PRICING_GO.new"
+rm -f "$BLOCK_FILE"
+gofmt -w "$PRICING_GO.new"
+
+if cmp -s "$PRICING_GO" "$PRICING_GO.new"; then
+	rm -f "$PRICING_GO.new"
+	echo "pricing.go already up to date" >&2
+	exit 0
+fi
+
+mv "$PRICING_GO.new" "$PRICING_GO"
+echo "updated $PRICING_GO — review with \`git diff pricing.go\`" >&2

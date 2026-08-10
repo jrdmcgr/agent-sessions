@@ -7,19 +7,25 @@ type rates struct {
 	Input, Output, CacheWrite, CacheRead float64
 }
 
-// USD per million tokens. Anthropic cache writes bill at 1.25x input, reads
-// at 0.1x input.
+// USD per million tokens, keyed by bare model name (post-shortModel, minus
+// the "claude-" prefix restored). Regenerate with `bin/update-pricing`,
+// which pulls rates from LiteLLM's model_prices_and_context_window.json. Do
+// not hand-edit the generated block; add new model names to the MODELS list
+// in bin/update-pricing instead.
+// pricing:generated:begin
 var pricing = map[string]rates{
-	"claude-opus-5":     {15.0, 75.0, 18.75, 1.5},
-	"claude-opus-4-8":   {15.0, 75.0, 18.75, 1.5},
-	"claude-opus-4-7":   {15.0, 75.0, 18.75, 1.5},
-	"claude-opus-4-1":   {15.0, 75.0, 18.75, 1.5},
-	"claude-opus-4":     {15.0, 75.0, 18.75, 1.5},
-	"claude-sonnet-4-5": {3.0, 15.0, 3.75, 0.3},
-	"claude-sonnet-4":   {3.0, 15.0, 3.75, 0.3},
-	"claude-haiku-4-5":  {1.0, 5.0, 1.25, 0.1},
-	"claude-3-5-haiku":  {0.8, 4.0, 1.0, 0.08},
+	"claude-opus-5":     {5, 25, 6.25, 0.5},
+	"claude-opus-4-8":   {5, 25, 6.25, 0.5},
+	"claude-opus-4-7":   {5, 25, 6.25, 0.5},
+	"claude-opus-4-1":   {15, 75, 18.75, 1.5},
+	"claude-opus-4":     {15, 75, 18.75, 1.5},
+	"claude-sonnet-4-5": {3, 15, 3.75, 0.3},
+	"claude-sonnet-4":   {3, 15, 3.75, 0.3},
+	"claude-haiku-4-5":  {1, 5, 1.25, 0.1},
+	"claude-3-5-haiku":  {0.8, 4, 1, 0.08},
 }
+
+// pricing:generated:end
 
 // Claude Code writes bare aliases when a session is started with one.
 var modelAliases = map[string]string{
