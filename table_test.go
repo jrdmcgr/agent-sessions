@@ -56,12 +56,13 @@ func TestRenderTableWithDateUnpriced(t *testing.T) {
 	renderTable(&w, &errW, rows, true)
 
 	want := "" +
-		"DATE       PROJECT         SESSION                     TIME         DUR    HARNESS  MODEL          TOKENS  COST\n" +
-		"---------  --------------  --------------------------  -----------  -----  -------  -------------  ------  ------\n" +
-		"Mon 08-05  agent-sessions  fix-widths *                09:00-10:23  1h23m  pi       sonnet-4-5     12k     $1.23\n" +
-		"Mon 08-05  dotfiles        a-much-longer-session-name  11:00-11:05  5m     claude   gpt-5-mystery  500     $0.50?\n" +
-		"---------  --------------  --------------------------  -----------  -----  -------  -------------  ------  ------\n" +
-		"TOTAL                      2 session-days                           1h28m                          13k     $1.73?\n"
+		"╭───────────┬────────────────┬────────────────────────────┬─────────────┬───────┬─────────┬───────────────┬────────┬────────╮\n" +
+		"│ DATE      │ PROJECT        │ SESSION                    │ TIME        │ DUR   │ HARNESS │ MODEL         │ TOKENS │ COST   │\n" +
+		"├───────────┼────────────────┼────────────────────────────┼─────────────┼───────┼─────────┼───────────────┼────────┼────────┤\n" +
+		"│ Mon 08-05 │ agent-sessions │ fix-widths *               │ 09:00-10:23 │ 1h23m │ pi      │ sonnet-4-5    │ 12k    │ $1.23  │\n" +
+		"│ Mon 08-05 │ dotfiles       │ a-much-longer-session-name │ 11:00-11:05 │ 5m    │ claude  │ gpt-5-mystery │ 500    │ $0.50? │\n" +
+		"│ TOTAL     │                │ 2 session-days             │             │ 1h28m │         │               │ 13k    │ $1.73? │\n" +
+		"╰───────────┴────────────────┴────────────────────────────┴─────────────┴───────┴─────────┴───────────────┴────────┴────────╯\n"
 
 	if w.String() != want {
 		t.Errorf("stdout mismatch\ngot:\n%s\nwant:\n%s", w.String(), want)
@@ -81,12 +82,13 @@ func TestRenderTableNoDateAllPriced(t *testing.T) {
 	renderTable(&w, &errW, rows, false)
 
 	want := "" +
-		"PROJECT         SESSION                     TIME         DUR    HARNESS  MODEL          TOKENS  COST\n" +
-		"--------------  --------------------------  -----------  -----  -------  -------------  ------  -----\n" +
-		"agent-sessions  fix-widths *                09:00-10:23  1h23m  pi       sonnet-4-5     12k     $1.23\n" +
-		"dotfiles        a-much-longer-session-name  11:00-11:05  5m     claude   gpt-5-mystery  500     $0.50\n" +
-		"--------------  --------------------------  -----------  -----  -------  -------------  ------  -----\n" +
-		"TOTAL           2 sessions                               1h28m                          13k     $1.73\n"
+		"╭────────────────┬────────────────────────────┬─────────────┬───────┬─────────┬───────────────┬────────┬───────╮\n" +
+		"│ PROJECT        │ SESSION                    │ TIME        │ DUR   │ HARNESS │ MODEL         │ TOKENS │ COST  │\n" +
+		"├────────────────┼────────────────────────────┼─────────────┼───────┼─────────┼───────────────┼────────┼───────┤\n" +
+		"│ agent-sessions │ fix-widths *               │ 09:00-10:23 │ 1h23m │ pi      │ sonnet-4-5    │ 12k    │ $1.23 │\n" +
+		"│ dotfiles       │ a-much-longer-session-name │ 11:00-11:05 │ 5m    │ claude  │ gpt-5-mystery │ 500    │ $0.50 │\n" +
+		"│ TOTAL          │ 2 sessions                 │             │ 1h28m │         │               │ 13k    │ $1.73 │\n" +
+		"╰────────────────┴────────────────────────────┴─────────────┴───────┴─────────┴───────────────┴────────┴───────╯\n"
 
 	if w.String() != want {
 		t.Errorf("stdout mismatch\ngot:\n%s\nwant:\n%s", w.String(), want)

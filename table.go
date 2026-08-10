@@ -3,8 +3,17 @@ package main
 import (
 	"fmt"
 	"io"
-	"strings"
 	"time"
+
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/lipgloss/table"
+)
+
+var (
+	tableBorderColor = lipgloss.Color("62")
+	tableHeaderStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212")).Padding(0, 1)
+	tableCellStyle   = lipgloss.NewStyle().Padding(0, 1)
+	tableTotalStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("86")).Padding(0, 1)
 )
 
 // renderTable writes the session table to w (stdout in production).
@@ -79,39 +88,25 @@ func renderTable(w, errW io.Writer, rows []Row, showDate bool) {
 	}
 	total[indexOf(headers, "COST")] = totalCostStr
 
-	widths := make([]int, len(headers))
-	for i, h := range headers {
-		widths[i] = len(h)
-	}
-	for _, cells := range append(append([][]string{}, body...), total) {
-		for i, cell := range cells {
-			if len(cell) > widths[i] {
-				widths[i] = len(cell)
+	totalRowIdx := len(body)
+
+	t := table.New().
+		Border(lipgloss.RoundedBorder()).
+		BorderStyle(lipgloss.NewStyle().Foreground(tableBorderColor)).
+		Headers(headers...).
+		Rows(body...).
+		Row(total...).
+		StyleFunc(func(row, col int) lipgloss.Style {
+			if row == table.HeaderRow {
+				return tableHeaderStyle
 			}
-		}
-	}
+			if row == totalRowIdx {
+				return tableTotalStyle
+			}
+			return tableCellStyle
+		})
 
-	line := func(cells []string) string {
-		parts := make([]string, len(cells))
-		for i, cell := range cells {
-			parts[i] = padRight(cell, widths[i])
-		}
-		return strings.TrimRight(strings.Join(parts, "  "), " ")
-	}
-
-	sep := make([]string, len(widths))
-	for i, wd := range widths {
-		sep[i] = strings.Repeat("-", wd)
-	}
-	sepLine := strings.Join(sep, "  ")
-
-	fmt.Fprintln(w, line(headers))
-	fmt.Fprintln(w, sepLine)
-	for _, cells := range body {
-		fmt.Fprintln(w, line(cells))
-	}
-	fmt.Fprintln(w, sepLine)
-	fmt.Fprintln(w, line(total))
+	fmt.Fprintln(w, t.Render())
 
 	if !allPriced {
 		fmt.Fprint(errW, "\n? = includes an unpriced model; cost is a lower bound.\n")
@@ -126,13 +121,4 @@ func indexOf(headers []string, s string) int {
 		}
 	}
 	return -1
-}
-
-// padRight left-justifies s to width w using spaces (byte-length, matching
-// Python's str.ljust on ASCII table content).
-func padRight(s string, w int) string {
-	if len(s) >= w {
-		return s
-	}
-	return s + strings.Repeat(" ", w-len(s))
 }
