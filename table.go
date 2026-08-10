@@ -18,8 +18,9 @@ var (
 
 // renderTable writes the session table to w (stdout in production).
 // showDate prepends a DATE column. The unpriced-model footnote goes to errW
-// (stderr in production). Ports render_table.
-func renderTable(w, errW io.Writer, rows []Row, showDate bool) {
+// (stderr in production). plain disables Unicode borders and color styling
+// in favor of ASCII borders, for piping into cut/awk/grep. Ports render_table.
+func renderTable(w, errW io.Writer, rows []Row, showDate, plain bool) {
 	if len(rows) == 0 {
 		fmt.Fprint(w, "No sessions found.\n")
 		return
@@ -90,20 +91,33 @@ func renderTable(w, errW io.Writer, rows []Row, showDate bool) {
 
 	totalRowIdx := len(body)
 
+	border := lipgloss.RoundedBorder()
+	borderStyle := lipgloss.NewStyle().Foreground(tableBorderColor)
+	headerStyle := tableHeaderStyle
+	cellStyle := tableCellStyle
+	totalStyle := tableTotalStyle
+	if plain {
+		border = lipgloss.ASCIIBorder()
+		borderStyle = lipgloss.NewStyle()
+		headerStyle = lipgloss.NewStyle().Padding(0, 1)
+		cellStyle = lipgloss.NewStyle().Padding(0, 1)
+		totalStyle = lipgloss.NewStyle().Padding(0, 1)
+	}
+
 	t := table.New().
-		Border(lipgloss.RoundedBorder()).
-		BorderStyle(lipgloss.NewStyle().Foreground(tableBorderColor)).
+		Border(border).
+		BorderStyle(borderStyle).
 		Headers(headers...).
 		Rows(body...).
 		Row(total...).
 		StyleFunc(func(row, col int) lipgloss.Style {
 			if row == table.HeaderRow {
-				return tableHeaderStyle
+				return headerStyle
 			}
 			if row == totalRowIdx {
-				return tableTotalStyle
+				return totalStyle
 			}
-			return tableCellStyle
+			return cellStyle
 		})
 
 	fmt.Fprintln(w, t.Render())
