@@ -3,26 +3,14 @@ package main
 import (
 	"fmt"
 	"io"
-	"sort"
 	"strings"
 	"time"
-
-	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/lipgloss/table"
-)
-
-var (
-	tableBorderColor = lipgloss.Color("62")
-	tableHeaderStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212")).Padding(0, 1)
-	tableCellStyle   = lipgloss.NewStyle().Padding(0, 1)
-	tableTotalStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("86")).Padding(0, 1)
 )
 
 // renderTable writes the session table to w (stdout in production).
 // showDate prepends a DATE column. The unpriced-model footnote goes to errW
-// (stderr in production). plain disables Unicode borders and color styling
-// in favor of ASCII borders, for piping into cut/awk/grep. Ports render_table.
-func renderTable(w, errW io.Writer, rows []Row, showDate, plain bool) {
+// (stderr in production). Ports render_table.
+func renderTable(w, errW io.Writer, rows []Row, showDate bool) {
 	if len(rows) == 0 {
 		fmt.Fprint(w, "No sessions found.\n")
 		return
@@ -66,19 +54,11 @@ func renderTable(w, errW io.Writer, rows []Row, showDate, plain bool) {
 	var totalCost float64
 	allPriced := true
 	var totalTime time.Duration
-	var unpricedModels []string
-	seenUnpriced := map[string]bool{}
 	for _, r := range rows {
 		totalTokens += r.Tokens
 		totalCost += r.Cost
 		if !r.Priced {
 			allPriced = false
-			for _, m := range r.Unpriced {
-				if !seenUnpriced[m] {
-					seenUnpriced[m] = true
-					unpricedModels = append(unpricedModels, m)
-				}
-			}
 		}
 		totalTime += r.End.Sub(r.Start)
 	}
@@ -99,42 +79,42 @@ func renderTable(w, errW io.Writer, rows []Row, showDate, plain bool) {
 	}
 	total[indexOf(headers, "COST")] = totalCostStr
 
-	totalRowIdx := len(body)
-
-	border := lipgloss.RoundedBorder()
-	borderStyle := lipgloss.NewStyle().Foreground(tableBorderColor)
-	headerStyle := tableHeaderStyle
-	cellStyle := tableCellStyle
-	totalStyle := tableTotalStyle
-	if plain {
-		border = lipgloss.ASCIIBorder()
-		borderStyle = lipgloss.NewStyle()
-		headerStyle = lipgloss.NewStyle().Padding(0, 1)
-		cellStyle = lipgloss.NewStyle().Padding(0, 1)
-		totalStyle = lipgloss.NewStyle().Padding(0, 1)
+	widths := make([]int, len(headers))
+	for i, h := range headers {
+		widths[i] = len(h)
+	}
+	for _, cells := range append(append([][]string{}, body...), total) {
+		for i, cell := range cells {
+			if len(cell) > widths[i] {
+				widths[i] = len(cell)
+			}
+		}
 	}
 
-	t := table.New().
-		Border(border).
-		BorderStyle(borderStyle).
-		Headers(headers...).
-		Rows(body...).
-		Row(total...).
-		StyleFunc(func(row, col int) lipgloss.Style {
-			if row == table.HeaderRow {
-				return headerStyle
-			}
-			if row == totalRowIdx {
-				return totalStyle
-			}
-			return cellStyle
-		})
+	line := func(cells []string) string {
+		parts := make([]string, len(cells))
+		for i, cell := range cells {
+			parts[i] = padRight(cell, widths[i])
+		}
+		return strings.TrimRight(strings.Join(parts, "  "), " ")
+	}
 
-	fmt.Fprintln(w, t.Render())
+	sep := make([]string, len(widths))
+	for i, wd := range widths {
+		sep[i] = strings.Repeat("-", wd)
+	}
+	sepLine := strings.Join(sep, "  ")
+
+	fmt.Fprintln(w, line(headers))
+	fmt.Fprintln(w, sepLine)
+	for _, cells := range body {
+		fmt.Fprintln(w, line(cells))
+	}
+	fmt.Fprintln(w, sepLine)
+	fmt.Fprintln(w, line(total))
 
 	if !allPriced {
-		sort.Strings(unpricedModels)
-		fmt.Fprintf(errW, "\n? = includes an unpriced model (%s); cost is a lower bound.\n", strings.Join(unpricedModels, ", "))
+		fmt.Fprint(errW, "\n? = includes an unpriced model; cost is a lower bound.\n")
 	}
 }
 
@@ -146,4 +126,13 @@ func indexOf(headers []string, s string) int {
 		}
 	}
 	return -1
+}
+
+// padRight left-justifies s to width w using spaces (byte-length, matching
+// Python's str.ljust on ASCII table content).
+func padRight(s string, w int) string {
+	if len(s) >= w {
+		return s
+	}
+	return s + strings.Repeat(" ", w-len(s))
 }

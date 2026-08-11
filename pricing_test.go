@@ -48,20 +48,9 @@ func TestPrice(t *testing.T) {
 		if got == nil {
 			t.Fatal("price returned nil for alias")
 		}
-		want := 2.0 + 10.0 + 2.5 + 0.2
+		want := 3.0 + 15.0 + 3.75 + 0.3
 		if *got != want {
 			t.Errorf("price = %v, want %v", *got, want)
-		}
-	})
-
-	t.Run("dated snapshot falls back to bare model rates", func(t *testing.T) {
-		dated := price("claude-haiku-4-5-20251001", Usage{Input: 1_000_000})
-		bare := price("claude-haiku-4-5", Usage{Input: 1_000_000})
-		if dated == nil || bare == nil {
-			t.Fatal("price returned nil")
-		}
-		if *dated != *bare {
-			t.Errorf("dated price = %v, want %v (bare model rate)", *dated, *bare)
 		}
 	})
 
@@ -96,6 +85,42 @@ func TestPrice(t *testing.T) {
 		}
 		if *read != 0.3 {
 			t.Errorf("cache read price = %v, want 0.3", *read)
+		}
+	})
+
+	// Regression (task 12 parity, 2026-08-11): pricing.go had drifted from
+	// the Python spec three ways: opus rates were halved/wrong, "sonnet"
+	// aliased to a bare "claude-sonnet-5" entry the Python table has never
+	// had, and price() stripped a "-YYYYMMDD" snapshot suffix before giving
+	// up, which Python does not do. All three must match Python exactly:
+	// only 9 rows, opus at (15,75,18.75,1.5), "sonnet" -> sonnet-4-5, and
+	// dated snapshots unpriced.
+	t.Run("opus rate matches python (not the halved litellm-synced value)", func(t *testing.T) {
+		got := price("claude-opus-5", Usage{Input: 1_000_000})
+		if got == nil {
+			t.Fatal("price returned nil for claude-opus-5")
+		}
+		if *got != 15.0 {
+			t.Errorf("price(claude-opus-5, 1M input) = %v, want 15.0", *got)
+		}
+	})
+
+	t.Run("sonnet alias resolves to sonnet-4-5, not a bare sonnet-5 entry", func(t *testing.T) {
+		got := price("sonnet", Usage{Input: 1_000_000})
+		want := price("claude-sonnet-4-5", Usage{Input: 1_000_000})
+		if got == nil || want == nil || *got != *want {
+			t.Errorf("price(sonnet) = %v, want price(claude-sonnet-4-5) = %v", got, want)
+		}
+		// claude-sonnet-5 as a literal (unaliased) model string must stay
+		// unpriced: Python's PRICING table has no such key.
+		if p := price("claude-sonnet-5", Usage{Input: 1_000_000}); p != nil {
+			t.Errorf("price(claude-sonnet-5) = %v, want nil (not in python's table)", *p)
+		}
+	})
+
+	t.Run("dated snapshot suffix is not stripped", func(t *testing.T) {
+		if p := price("claude-haiku-4-5-20251001", Usage{Input: 1_000_000}); p != nil {
+			t.Errorf("price(claude-haiku-4-5-20251001) = %v, want nil (python has no snapshot fallback)", *p)
 		}
 	})
 }

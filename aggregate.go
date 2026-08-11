@@ -8,15 +8,13 @@ import (
 
 // dayBucket accumulates one calendar day's worth of a session's events.
 type dayBucket struct {
-	first, last  time.Time
-	usage        Usage
-	cost         float64
-	priced       bool
-	models       []string // raw models, order of first appearance
-	seenModel    map[string]bool
-	unpriced     []string // raw model names with no pricing entry, order of first appearance
-	seenUnpriced map[string]bool
-	messages     int
+	first, last time.Time
+	usage       Usage
+	cost        float64
+	priced      bool
+	models      []string // raw models, order of first appearance
+	seenModel   map[string]bool
+	messages    int
 }
 
 // sessionDays splits a session into one Row per calendar day of activity.
@@ -38,7 +36,7 @@ func sessionDays(s *Session, days map[time.Time]bool, now time.Time) []Row {
 		}
 		b, ok := buckets[day]
 		if !ok {
-			b = &dayBucket{priced: true, seenModel: map[string]bool{}, seenUnpriced: map[string]bool{}}
+			b = &dayBucket{priced: true, seenModel: map[string]bool{}}
 			buckets[day] = b
 			order = append(order, day)
 		}
@@ -61,10 +59,6 @@ func sessionDays(s *Session, days map[time.Time]bool, now time.Time) []Row {
 			}
 			if cost == nil {
 				b.priced = false
-				if !b.seenUnpriced[event.Model] {
-					b.seenUnpriced[event.Model] = true
-					b.unpriced = append(b.unpriced, event.Model)
-				}
 			} else {
 				b.cost += *cost
 			}
@@ -101,7 +95,6 @@ func sessionDays(s *Session, days map[time.Time]bool, now time.Time) []Row {
 			Usage:    b.usage,
 			Cost:     b.cost,
 			Priced:   b.priced,
-			Unpriced: b.unpriced,
 			Messages: b.messages,
 			Active:   now.Sub(b.last) < ActiveWindow,
 			Path:     s.Path,
