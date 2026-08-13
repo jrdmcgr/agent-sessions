@@ -64,6 +64,10 @@ type jsonRow struct {
 // run executes the program against explicit roots and writers so tests can
 // inject fixtures. Returns an exit code.
 func run(argv []string, piRoot, claudeRoot string, stdout, stderr io.Writer, now time.Time) int {
+	if len(argv) > 0 && argv[0] == "show" {
+		return runShow(argv[1:], stdout, stderr)
+	}
+
 	opts, err := parseArgs(argv)
 	if err != nil {
 		if err == errHelp {
