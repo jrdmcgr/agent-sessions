@@ -14,7 +14,7 @@ func readPiSession(path string) *Session {
 		sessionID = stem[idx+1:]
 	}
 
-	var cwd, name, model string
+	var cwd, name, model, provider, gitBranch string
 	var events []Event
 
 	for _, entry := range iterJSONL(path) {
@@ -33,14 +33,28 @@ func readPiSession(path string) *Session {
 			if v := getString(entry, "modelId"); v != "" {
 				model = v
 			}
+			if v := getString(entry, "provider"); v != "" {
+				provider = v
+			}
 		case "session_info":
 			if v := getString(entry, "name"); v != "" {
 				name = v
+			}
+		case "custom":
+			// git-branch entries are stamped by the pi extension (see plan 002);
+			// last one wins so GitBranch tracks mid-session changes.
+			if getString(entry, "customType") == "git-branch" {
+				if v := getString(getMap(entry, "data"), "branch"); v != "" {
+					gitBranch = v
+				}
 			}
 		case "message":
 			msg := getMap(entry, "message")
 			if v := getString(msg, "model"); v != "" {
 				model = v
+			}
+			if v := getString(msg, "provider"); v != "" {
+				provider = v
 			}
 			usage := Usage{}
 			var cost *float64
@@ -58,12 +72,14 @@ func readPiSession(path string) *Session {
 				}
 			}
 			events = append(events, Event{
-				TS:    ts,
-				Model: model,
-				Usage: usage,
-				Cost:  cost,
-				Role:  getString(msg, "role"),
-				Text:  firstText(msg["content"]),
+				TS:     ts,
+				UUID:   getString(entry, "id"),
+				Model:  model,
+				Usage:  usage,
+				Cost:   cost,
+				Role:   getString(msg, "role"),
+				Text:   firstText(msg["content"]),
+				Blocks: piContentBlocks(msg["content"]),
 			})
 		}
 	}
@@ -77,11 +93,14 @@ func readPiSession(path string) *Session {
 	}
 
 	return &Session{
-		Harness: HarnessPi,
-		ID:      sessionID,
-		Path:    path,
-		CWD:     cwd,
-		Name:    name,
-		Events:  events,
+		Harness:     HarnessPi,
+		ID:          sessionID,
+		Path:        path,
+		CWD:         cwd,
+		Name:        name,
+		CustomTitle: name, // pi's only title is the session_info name
+		Provider:    provider,
+		GitBranch:   gitBranch,
+		Events:      events,
 	}
 }

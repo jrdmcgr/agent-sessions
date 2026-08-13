@@ -119,6 +119,47 @@ func TestReadClaudeSession(t *testing.T) {
 		assertClaudeSessionEqual(t, got, want)
 	})
 
+	t.Run("enriched fields", func(t *testing.T) {
+		dir := t.TempDir()
+		content := `{"type":"custom-title","customTitle":"My Custom Title"}
+{"type":"ai-title","aiTitle":"An AI Title"}
+{"type":"user","uuid":"u1","cwd":"/Users/x/Code/proj","gitBranch":"develop","version":"1.2.3","slug":"my-slug","sessionId":"uuid1","timestamp":"2026-08-05T10:01:00Z","message":{"content":"hello there"}}
+{"type":"assistant","uuid":"a1","cwd":"/Users/x/Code/proj","gitBranch":"feature","sessionId":"uuid1","timestamp":"2026-08-05T10:02:00Z","message":{"model":"claude-sonnet-4-5","content":[{"type":"thinking","thinking":"drop"},{"type":"text","text":"hi back"},{"type":"tool_use","name":"Bash","input":{"command":"ls"}}]}}
+`
+		path := writeClaudeFixture(t, dir, "projects/-Users-x-Code-proj", "uuid1.jsonl", content)
+
+		got := readClaudeSession(path)
+		if got == nil {
+			t.Fatal("readClaudeSession returned nil")
+		}
+		if got.CustomTitle != "My Custom Title" {
+			t.Errorf("CustomTitle = %q, want %q", got.CustomTitle, "My Custom Title")
+		}
+		if got.AITitle != "An AI Title" {
+			t.Errorf("AITitle = %q, want %q", got.AITitle, "An AI Title")
+		}
+		if got.Provider != "anthropic" {
+			t.Errorf("Provider = %q, want %q", got.Provider, "anthropic")
+		}
+		if got.Slug != "my-slug" {
+			t.Errorf("Slug = %q, want %q", got.Slug, "my-slug")
+		}
+		if got.Version != "1.2.3" {
+			t.Errorf("Version = %q, want %q", got.Version, "1.2.3")
+		}
+		if got.GitBranch != "develop" {
+			t.Errorf("GitBranch = %q, want %q (first non-empty wins)", got.GitBranch, "develop")
+		}
+		if got.Events[0].UUID != "u1" {
+			t.Errorf("Events[0].UUID = %q, want %q", got.Events[0].UUID, "u1")
+		}
+		assertBlocksEqual(t, "user", got.Events[0].Blocks, []Block{{Type: "text", Text: "hello there"}})
+		assertBlocksEqual(t, "assistant", got.Events[1].Blocks, []Block{
+			{Type: "text", Text: "hi back"},
+			{Type: "tool_use", Name: "Bash", Input: map[string]any{"command": "ls"}},
+		})
+	})
+
 	t.Run("ai-title only", func(t *testing.T) {
 		dir := t.TempDir()
 		content := `{"type":"ai-title","aiTitle":"Only AI Title"}

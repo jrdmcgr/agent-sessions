@@ -55,24 +55,44 @@ func (u *Usage) Add(other Usage) {
 	u.CacheWrite += other.CacheWrite
 }
 
+// Block is one normalized content block of a message. Type is either "text"
+// or "tool_use"; the other fields are set per type. Tool identity is
+// normalized to the Claude spelling across harnesses (see normalize.go), so a
+// consumer never has to know which harness produced it. thinking and
+// tool_result blocks are dropped during normalization, matching archive-session.
+type Block struct {
+	Type  string         `json:"type"`            // "text" | "tool_use"
+	Text  string         `json:"text,omitempty"`  // for "text"
+	Name  string         `json:"name,omitempty"`  // for "tool_use" (canonical)
+	Input map[string]any `json:"input,omitempty"` // for "tool_use"
+}
+
 // Event is one message-level entry from a transcript.
 type Event struct {
-	TS    time.Time // zero value means "no timestamp"
-	Model string
-	Usage Usage
-	Cost  *float64 // recorded cost (pi only); nil if absent
-	Role  string   // "user" or "assistant"
-	Text  string   // first text block of the message content
+	TS     time.Time // zero value means "no timestamp"
+	UUID   string    // per-message id (claude "uuid", pi entry "id"); note delta key
+	Model  string
+	Usage  Usage
+	Cost   *float64 // recorded cost (pi only); nil if absent
+	Role   string   // "user" or "assistant"
+	Text   string   // first text block of the message content
+	Blocks []Block  // full normalized content (text + tool_use)
 }
 
 // Session is one parsed transcript file.
 type Session struct {
-	Harness string
-	ID      string
-	Path    string
-	CWD     string
-	Name    string // "" if the transcript carries no name/title
-	Events  []Event
+	Harness     string
+	ID          string
+	Path        string
+	CWD         string
+	Name        string // resolved display title: CustomTitle || AITitle || ""
+	CustomTitle string // raw user/session title; "" if absent
+	AITitle     string // raw generated title (claude only); "" if absent
+	Slug        string // claude only; "" if absent
+	Version     string // harness version string; "" if absent
+	Provider    string // last provider seen; "" if absent
+	GitBranch   string // "" if the transcript carries no branch
+	Events      []Event
 }
 
 // Row is one session-day: a session's activity within a single calendar day.

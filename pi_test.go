@@ -77,6 +77,50 @@ func TestReadPiSessionFull(t *testing.T) {
 	assertPiSessionEqual(t, got, want)
 }
 
+// TestReadPiSessionEnriched covers the Phase-1 additions: per-message UUID
+// (pi entry "id"), normalized content Blocks (text + tool_use with the
+// pi->Claude name/arg remap, thinking dropped), sticky Provider, and
+// CustomTitle from session_info. GitBranch comes from a "git-branch" custom
+// entry (last wins).
+func TestReadPiSessionEnriched(t *testing.T) {
+	dir := t.TempDir()
+	content := `{"type":"session","cwd":"/Users/jared/proj","id":"abc123","timestamp":"2026-08-05T14:00:00Z"}
+{"type":"session_info","name":"My Session","timestamp":"2026-08-05T14:00:01Z"}
+{"type":"custom","customType":"git-branch","data":{"branch":"feature-x"},"timestamp":"2026-08-05T14:00:02Z"}
+{"type":"message","id":"m1","timestamp":"2026-08-05T14:00:03Z","message":{"role":"user","content":"hello"}}
+{"type":"message","id":"m2","timestamp":"2026-08-05T14:00:04Z","message":{"role":"assistant","provider":"anthropic","model":"claude-opus-4","content":[{"type":"thinking","thinking":"drop me"},{"type":"text","text":"on it"},{"type":"toolCall","id":"t1","name":"read","arguments":{"path":"/etc/hosts"}}]}}
+{"type":"custom","customType":"git-branch","data":{"branch":"main"},"timestamp":"2026-08-05T14:00:05Z"}
+`
+	path := writePiFixture(t, dir, "someslug", "2026-08-05_enrich.jsonl", content)
+
+	got := readPiSession(path)
+	if got == nil {
+		t.Fatal("expected non-nil session")
+	}
+	if got.Provider != "anthropic" {
+		t.Errorf("Provider = %q, want %q", got.Provider, "anthropic")
+	}
+	if got.CustomTitle != "My Session" {
+		t.Errorf("CustomTitle = %q, want %q", got.CustomTitle, "My Session")
+	}
+	if got.GitBranch != "main" {
+		t.Errorf("GitBranch = %q, want %q (last git-branch entry wins)", got.GitBranch, "main")
+	}
+	if len(got.Events) != 2 {
+		t.Fatalf("Events len = %d, want 2", len(got.Events))
+	}
+	if got.Events[0].UUID != "m1" {
+		t.Errorf("Events[0].UUID = %q, want %q", got.Events[0].UUID, "m1")
+	}
+	wantUser := []Block{{Type: "text", Text: "hello"}}
+	assertBlocksEqual(t, "user", got.Events[0].Blocks, wantUser)
+	wantAsst := []Block{
+		{Type: "text", Text: "on it"},
+		{Type: "tool_use", Name: "Read", Input: map[string]any{"file_path": "/etc/hosts"}},
+	}
+	assertBlocksEqual(t, "assistant", got.Events[1].Blocks, wantAsst)
+}
+
 // TestReadPiSessionIDFallbackNoUnderscore covers behavior 1: a stem with no
 // "_" uses the whole stem as the ID, and no session entry means it is never
 // overridden.

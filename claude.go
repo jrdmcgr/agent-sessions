@@ -8,7 +8,7 @@ import (
 // readClaudeSession parses one Claude Code transcript. Returns nil if the
 // file yields no user/assistant events.
 func readClaudeSession(path string) *Session {
-	var customTitle, aiTitle, cwd string
+	var customTitle, aiTitle, cwd, gitBranch, slug, version string
 	sessionID := filepath.Base(path)
 	sessionID = strings.TrimSuffix(sessionID, filepath.Ext(sessionID))
 
@@ -37,6 +37,15 @@ func readClaudeSession(path string) *Session {
 		if cwd == "" {
 			cwd = getString(entry, "cwd")
 		}
+		if gitBranch == "" {
+			gitBranch = getString(entry, "gitBranch")
+		}
+		if slug == "" {
+			slug = getString(entry, "slug")
+		}
+		if version == "" {
+			version = getString(entry, "version")
+		}
 		if id := getString(entry, "sessionId"); id != "" {
 			sessionID = id
 		}
@@ -62,12 +71,14 @@ func readClaudeSession(path string) *Session {
 		}
 
 		events = append(events, Event{
-			TS:    parseTS(entry["timestamp"]),
-			Model: model,
-			Usage: usage,
-			Cost:  nil,
-			Role:  role,
-			Text:  firstText(msg["content"]),
+			TS:     parseTS(entry["timestamp"]),
+			UUID:   getString(entry, "uuid"),
+			Model:  model,
+			Usage:  usage,
+			Cost:   nil,
+			Role:   role,
+			Text:   firstText(msg["content"]),
+			Blocks: claudeContentBlocks(msg["content"]),
 		})
 	}
 
@@ -85,11 +96,17 @@ func readClaudeSession(path string) *Session {
 	}
 
 	return &Session{
-		Harness: HarnessClaude,
-		ID:      sessionID,
-		Path:    path,
-		CWD:     cwd,
-		Name:    name,
-		Events:  events,
+		Harness:     HarnessClaude,
+		ID:          sessionID,
+		Path:        path,
+		CWD:         cwd,
+		Name:        name,
+		CustomTitle: customTitle,
+		AITitle:     aiTitle,
+		Slug:        slug,
+		Version:     version,
+		Provider:    "anthropic",
+		GitBranch:   gitBranch,
+		Events:      events,
 	}
 }
