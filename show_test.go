@@ -42,6 +42,7 @@ func TestShowClaudeRecord(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "projects", "-Users-x-Code-proj")
 	content := `{"type":"custom-title","customTitle":"My Title"}
 {"type":"user","uuid":"u0","cwd":"/Users/x/Code/proj","gitBranch":"main","version":"1.2.3","slug":"the-slug","sessionId":"sid","timestamp":"2026-08-05T10:00:00Z","message":{"content":"<command-name>/clear</command-name>"}}
+{"type":"user","uuid":"um","isMeta":true,"sessionId":"sid","timestamp":"2026-08-05T10:00:30Z","message":{"content":"injected system reminder"}}
 {"type":"user","uuid":"u1","sessionId":"sid","timestamp":"2026-08-05T10:01:00Z","message":{"content":"Please <b>refactor</b> the parser"}}
 {"type":"assistant","uuid":"a1","sessionId":"sid","timestamp":"2026-08-05T10:02:00Z","message":{"model":"claude-sonnet-4-5","content":[{"type":"text","text":"on it"},{"type":"tool_use","name":"Bash","input":{"command":"ls"}}]}}
 {"type":"assistant","uuid":"a2","sessionId":"sid","timestamp":"2026-08-05T10:03:00Z","message":{"model":"claude-sonnet-4-5","content":[{"type":"text","text":"   "}]}}
@@ -51,9 +52,6 @@ func TestShowClaudeRecord(t *testing.T) {
 	rec, code := decodeRecord(t, []string{path, "--messages"})
 	if code != 0 {
 		t.Fatalf("exit = %d", code)
-	}
-	local := func(u string) string {
-		return parseTS(u).Format("2006-01-02T15:04:05")
 	}
 	checks := map[string]struct{ got, want string }{
 		"harness":      {rec.Harness, "claude"},
@@ -65,21 +63,21 @@ func TestShowClaudeRecord(t *testing.T) {
 		"version":      {rec.Version, "1.2.3"},
 		"custom_title": {rec.CustomTitle, "My Title"},
 		"name":         {rec.Name, "My Title"},
-		"summary":      {rec.Summary, "Please refactor the parser"},
-		"started_at":   {rec.StartedAt, local("2026-08-05T10:00:00Z")},
-		"ended_at":     {rec.EndedAt, local("2026-08-05T10:03:00Z")},
-		"model":        {rec.Model, "sonnet-4-5"},
+		"summary":      {rec.Summary, "Please refactor the parser"}, // isMeta turn skipped
+		"started_at":   {rec.StartedAt, "2026-08-05T10:00:00Z"},      // raw, as recorded
+		"ended_at":     {rec.EndedAt, "2026-08-05T10:03:00Z"},
+		"model":        {rec.Model, "claude-sonnet-4-5"},            // full id, not shortened
 	}
 	for field, c := range checks {
 		if c.got != c.want {
 			t.Errorf("%s = %q, want %q", field, c.got, c.want)
 		}
 	}
-	if rec.MessageCount != 4 {
-		t.Errorf("message_count = %d, want 4 (all user/assistant events)", rec.MessageCount)
+	if rec.MessageCount != 5 {
+		t.Errorf("message_count = %d, want 5 (all user/assistant events incl. isMeta)", rec.MessageCount)
 	}
 	if rec.RenderableCount != 2 {
-		t.Errorf("renderable_count = %d, want 2 (noise + empty-text dropped)", rec.RenderableCount)
+		t.Errorf("renderable_count = %d, want 2 (noise + empty-text + isMeta dropped)", rec.RenderableCount)
 	}
 	if len(rec.Messages) != 2 {
 		t.Fatalf("messages len = %d, want 2", len(rec.Messages))
@@ -91,8 +89,8 @@ func TestShowClaudeRecord(t *testing.T) {
 		{Type: "text", Text: "on it"},
 		{Type: "tool_use", Name: "Bash", Input: map[string]any{"command": "ls"}},
 	})
-	if rec.Messages[1].Model != "sonnet-4-5" {
-		t.Errorf("messages[1].model = %q, want sonnet-4-5", rec.Messages[1].Model)
+	if rec.Messages[1].Model != "claude-sonnet-4-5" {
+		t.Errorf("messages[1].model = %q, want claude-sonnet-4-5", rec.Messages[1].Model)
 	}
 }
 

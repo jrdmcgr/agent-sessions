@@ -72,7 +72,9 @@ func readClaudeSession(path string) *Session {
 
 		events = append(events, Event{
 			TS:     parseTS(entry["timestamp"]),
+			TSRaw:  getString(entry, "timestamp"),
 			UUID:   getString(entry, "uuid"),
+			Meta:   getBool(entry, "isMeta"),
 			Model:  model,
 			Usage:  usage,
 			Cost:   nil,

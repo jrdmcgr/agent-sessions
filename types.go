@@ -70,7 +70,9 @@ type Block struct {
 // Event is one message-level entry from a transcript.
 type Event struct {
 	TS     time.Time // zero value means "no timestamp"
+	TSRaw  string    // the timestamp as recorded (ISO, usually UTC); "" if none
 	UUID   string    // per-message id (claude "uuid", pi entry "id"); note delta key
+	Meta   bool      // claude isMeta: a system-injected turn, not conversation
 	Model  string
 	Usage  Usage
 	Cost   *float64 // recorded cost (pi only); nil if absent

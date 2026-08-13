@@ -73,6 +73,7 @@ func readPiSession(path string) *Session {
 			}
 			events = append(events, Event{
 				TS:     ts,
+				TSRaw:  getString(entry, "timestamp"),
 				UUID:   getString(entry, "id"),
 				Model:  model,
 				Usage:  usage,

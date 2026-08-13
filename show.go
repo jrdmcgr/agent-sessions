@@ -132,7 +132,7 @@ func eventBody(ev Event) string {
 // Ports archive-session's extract_summary.
 func extractSummary(s *Session) string {
 	for _, ev := range s.Events {
-		if ev.Role != "user" {
+		if ev.Role != "user" || ev.Meta {
 			continue
 		}
 		body := strings.TrimSpace(eventBody(ev))
@@ -197,26 +197,20 @@ func buildRecord(s *Session, withMessages bool) sessionRecord {
 		rec.Name = fallbackName(s)
 	}
 
+	// Models here are raw ids, not shortened: `show` is a data interface, and
+	// shortening is display formatting the consumer owns (decision 2).
 	seenModel := map[string]bool{}
 	var first, last time.Time
+	var firstRaw, lastRaw string
 	lastModel := ""
 	for _, ev := range s.Events {
-		if !ev.TS.IsZero() {
-			if first.IsZero() || ev.TS.Before(first) {
-				first = ev.TS
-			}
-			if last.IsZero() || ev.TS.After(last) {
-				last = ev.TS
-			}
-		}
 		rec.MessageCount++
 		rec.Usage.Add(ev.Usage)
 		if ev.Model != "" {
 			lastModel = ev.Model
-			short := shortModel(ev.Model)
-			if !seenModel[short] {
-				seenModel[short] = true
-				rec.Models = append(rec.Models, short)
+			if !seenModel[ev.Model] {
+				seenModel[ev.Model] = true
+				rec.Models = append(rec.Models, ev.Model)
 			}
 		}
 		if ev.Usage.Any() {
@@ -235,8 +229,24 @@ func buildRecord(s *Session, withMessages bool) sessionRecord {
 		// bashExecution, etc. as their own message entries (they count toward
 		// message_count above, matching the table) but carry no dialogue, so
 		// archive-session drops them from the rendered body and so do we.
-		if ev.Role != "user" && ev.Role != "assistant" {
+		// isMeta is a system-injected turn (render_user skips it), and
+		// toolResult/bashExecution are not dialogue: excluded from renderable
+		// and messages[], but still counted above.
+		if ev.Meta || (ev.Role != "user" && ev.Role != "assistant") {
 			continue
+		}
+		// The session span is the conversation boundary: earliest to latest
+		// user/assistant turn. Consistent across harnesses, unlike
+		// archive-session (claude counted trailing system/summary writes, pi
+		// did not); computed here over conversation turns regardless of whether
+		// their blocks render, so a thinking-only reply still bounds the span.
+		if !ev.TS.IsZero() {
+			if first.IsZero() || ev.TS.Before(first) {
+				first, firstRaw = ev.TS, ev.TSRaw
+			}
+			if last.IsZero() || ev.TS.After(last) {
+				last, lastRaw = ev.TS, ev.TSRaw
+			}
 		}
 		blocks := renderableBlocks(ev.Blocks)
 		if len(blocks) == 0 {
@@ -247,26 +257,17 @@ func buildRecord(s *Session, withMessages bool) sessionRecord {
 		}
 		rec.RenderableCount++
 		if withMessages {
-			mr := messageRecord{UUID: ev.UUID, Role: ev.Role, Blocks: blocks}
-			if !ev.TS.IsZero() {
-				mr.TS = ev.TS.Format("2006-01-02T15:04:05")
-			}
+			mr := messageRecord{UUID: ev.UUID, Role: ev.Role, TS: ev.TSRaw, Blocks: blocks}
 			if ev.Role == "assistant" {
-				mr.Model = shortModel(ev.Model)
+				mr.Model = ev.Model
 			}
 			rec.Messages = append(rec.Messages, mr)
 		}
 	}
 	rec.Tokens = rec.Usage.Total()
-	if lastModel != "" {
-		rec.Model = shortModel(lastModel)
-	}
-	if !first.IsZero() {
-		rec.StartedAt = first.Format("2006-01-02T15:04:05")
-	}
-	if !last.IsZero() {
-		rec.EndedAt = last.Format("2006-01-02T15:04:05")
-	}
+	rec.Model = lastModel
+	rec.StartedAt = firstRaw
+	rec.EndedAt = lastRaw
 	return rec
 }
 

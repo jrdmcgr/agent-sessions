@@ -146,9 +146,23 @@ Each phase's new tests must be seen to fail first (repo convention; `AGENTS.md �
   blocks) + both message counts + session-level `started_at`/`ended_at` + derived `summary`
   (port `extract_summary`: first substantive user message, tags stripped, truncated 120).
 
-### Phase 3 — verify by parity
-- Golden test: new per-session JSON matches Python's `collect_metadata` + normalized blocks on
-  shared fixtures. Break the code to see it fail, then restore.
+### Phase 3 — verify by parity (done)
+Verified by running the real `archive-session` (in a sandboxed `HOME`) against real transcripts
+and diffing its note frontmatter against `sessions show`. Simple/single-day sessions match
+byte-for-byte. Durable in-repo checks live in `show_test.go`; the cross-repo diff stayed a
+one-shot verification, not a committed test, because `archive-session` is the thing being
+refactored away.
+
+Three intentional divergences, each confirmed by inspecting the transcripts (not assumed):
+
+| Field | archive-session | `sessions show` | Note |
+|---|---|---|---|
+| pi `git_branch` | `git rev-parse` at archive time | reads the git-branch custom entry | Expected, forward-only (decision 1); empty until the extension ships |
+| `started_at`/`ended_at` | first/last *file-line* ts, incl. `system`/`isMeta` entries; harness-asymmetric | min/max of user/assistant (non-`isMeta`) turns, consistent across harnesses | Ours is cleaner: excludes trailing `system` writes and leading meta lines. Fixed pi exactly; shifts some multi-day claude notes by seconds-to-minutes |
+| `model` | last *selected* model (a trailing `model_change` with no message under it counts) | last model that produced output | Judgment call; ours names the model that did the work |
+
+The span and model divergences change note output on refactor, so they are the note-archiver's
+call to accept when it adopts the tool (see Follow-on).
 
 ## Follow-on (named, not in this plan)
 Two thin consumers each call `sessions show`:
