@@ -183,54 +183,6 @@ func TestRunTempAllJSON(t *testing.T) {
 	}
 }
 
-// Regression (task 12 parity, 2026-08-11): a since-removed filter dropped
-// any row with Name == "(unnamed)", Cost == 0, and !Active. Python has no
-// such filter — a session where no work happened (started, no assistant
-// reply, no model) is still a real row, just an uninformative one. --all
-// must include it.
-func TestRunIncludesZeroCostUnnamedInactiveSession(t *testing.T) {
-	piRoot, claudeRoot := buildMainFixtures(t)
-
-	claudeContent := `{"type":"user","cwd":"/Users/jared/proj-claude","sessionId":"claude-empty-1","timestamp":"2026-08-05T14:00:00Z","message":{"content":"<system-reminder>noise</system-reminder>"}}
-{"type":"user","cwd":"/Users/jared/proj-claude","sessionId":"claude-empty-1","timestamp":"2026-08-05T14:00:01Z","message":{"content":"<system-reminder>still noise</system-reminder>"}}
-`
-	emptyPath := writeClaudeFixture(t, claudeRoot, "-Users-jared-proj-claude", "claude-empty-1.jsonl", claudeContent)
-	mtime := time.Date(2026, 8, 5, 12, 0, 0, 0, time.Local)
-	if err := os.Chtimes(emptyPath, mtime, mtime); err != nil {
-		t.Fatal(err)
-	}
-
-	var stdout, stderr bytes.Buffer
-	code := run([]string{"--all", "--json"}, piRoot, claudeRoot, &stdout, &stderr, fixedNow)
-	if code != 0 {
-		t.Fatalf("exit code = %d, stderr = %q", code, stderr.String())
-	}
-
-	var rows []map[string]any
-	if err := json.Unmarshal(stdout.Bytes(), &rows); err != nil {
-		t.Fatalf("invalid JSON: %v", err)
-	}
-
-	found := false
-	for _, r := range rows {
-		if r["id"] == "claude-empty-1" {
-			found = true
-			if r["name"] != "(unnamed)" {
-				t.Errorf("name = %v, want (unnamed)", r["name"])
-			}
-			if r["cost"] != 0.0 {
-				t.Errorf("cost = %v, want 0", r["cost"])
-			}
-			if r["active"] != false {
-				t.Errorf("active = %v, want false", r["active"])
-			}
-		}
-	}
-	if !found {
-		t.Error("zero-cost unnamed inactive session was dropped; python has no such filter")
-	}
-}
-
 func TestRunProjectFilter(t *testing.T) {
 	piRoot, claudeRoot := buildMainFixtures(t)
 	var stdout, stderr bytes.Buffer

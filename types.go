@@ -111,7 +111,8 @@ type Row struct {
 	Tokens   int64
 	Usage    Usage
 	Cost     float64
-	Priced   bool // false if any event used an unpriced model
+	Priced   bool     // false if any event used an unpriced model
+	Unpriced []string // raw model names (pre-shortModel) that had no pricing entry
 	Messages int
 	Active   bool
 	Path     string

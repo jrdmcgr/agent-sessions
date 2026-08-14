@@ -23,24 +23,25 @@ func mkTestRows() []Row {
 			Priced:  true,
 		},
 		{
-			Date:    dayOf(base),
-			Project: "dotfiles",
-			Name:    "a-much-longer-session-name",
-			Active:  false,
-			Start:   base.Add(2 * time.Hour),
-			End:     base.Add(2*time.Hour + 5*time.Minute),
-			Harness: "claude",
-			Models:  []string{"gpt-5-mystery"},
-			Tokens:  500,
-			Cost:    0.5,
-			Priced:  false,
+			Date:     dayOf(base),
+			Project:  "dotfiles",
+			Name:     "a-much-longer-session-name",
+			Active:   false,
+			Start:    base.Add(2 * time.Hour),
+			End:      base.Add(2*time.Hour + 5*time.Minute),
+			Harness:  "claude",
+			Models:   []string{"gpt-5-mystery"},
+			Tokens:   500,
+			Cost:     0.5,
+			Priced:   false,
+			Unpriced: []string{"gpt-5-mystery"},
 		},
 	}
 }
 
 func TestRenderTableEmpty(t *testing.T) {
 	var w, errW bytes.Buffer
-	renderTable(&w, &errW, nil, false)
+	renderTable(&w, &errW, nil, false, false)
 	want := "No sessions found.\n"
 	if w.String() != want {
 		t.Errorf("stdout = %q, want %q", w.String(), want)
@@ -53,21 +54,22 @@ func TestRenderTableEmpty(t *testing.T) {
 func TestRenderTableWithDateUnpriced(t *testing.T) {
 	rows := mkTestRows()
 	var w, errW bytes.Buffer
-	renderTable(&w, &errW, rows, true)
+	renderTable(&w, &errW, rows, true, false)
 
 	want := "" +
-		"DATE       PROJECT         SESSION                     TIME         DUR    HARNESS  MODEL          TOKENS  COST\n" +
-		"---------  --------------  --------------------------  -----------  -----  -------  -------------  ------  ------\n" +
-		"Mon 08-05  agent-sessions  fix-widths *                09:00-10:23  1h23m  pi       sonnet-4-5     12k     $1.23\n" +
-		"Mon 08-05  dotfiles        a-much-longer-session-name  11:00-11:05  5m     claude   gpt-5-mystery  500     $0.50?\n" +
-		"---------  --------------  --------------------------  -----------  -----  -------  -------------  ------  ------\n" +
-		"TOTAL                      2 session-days                           1h28m                          13k     $1.73?\n"
+		"╭───────────┬────────────────┬────────────────────────────┬─────────────┬───────┬─────────┬───────────────┬────────┬────────╮\n" +
+		"│ DATE      │ PROJECT        │ SESSION                    │ TIME        │ DUR   │ HARNESS │ MODEL         │ TOKENS │ COST   │\n" +
+		"├───────────┼────────────────┼────────────────────────────┼─────────────┼───────┼─────────┼───────────────┼────────┼────────┤\n" +
+		"│ Mon 08-05 │ agent-sessions │ fix-widths *               │ 09:00-10:23 │ 1h23m │ pi      │ sonnet-4-5    │ 12k    │ $1.23  │\n" +
+		"│ Mon 08-05 │ dotfiles       │ a-much-longer-session-name │ 11:00-11:05 │ 5m    │ claude  │ gpt-5-mystery │ 500    │ $0.50? │\n" +
+		"│ TOTAL     │                │ 2 session-days             │             │ 1h28m │         │               │ 13k    │ $1.73? │\n" +
+		"╰───────────┴────────────────┴────────────────────────────┴─────────────┴───────┴─────────┴───────────────┴────────┴────────╯\n"
 
 	if w.String() != want {
 		t.Errorf("stdout mismatch\ngot:\n%s\nwant:\n%s", w.String(), want)
 	}
 
-	wantErr := "\n? = includes an unpriced model; cost is a lower bound.\n"
+	wantErr := "\n? = includes an unpriced model (gpt-5-mystery); cost is a lower bound.\n"
 	if errW.String() != wantErr {
 		t.Errorf("errW = %q, want %q", errW.String(), wantErr)
 	}
@@ -78,20 +80,42 @@ func TestRenderTableNoDateAllPriced(t *testing.T) {
 	rows[1].Priced = true // make all rows priced
 
 	var w, errW bytes.Buffer
-	renderTable(&w, &errW, rows, false)
+	renderTable(&w, &errW, rows, false, false)
 
 	want := "" +
-		"PROJECT         SESSION                     TIME         DUR    HARNESS  MODEL          TOKENS  COST\n" +
-		"--------------  --------------------------  -----------  -----  -------  -------------  ------  -----\n" +
-		"agent-sessions  fix-widths *                09:00-10:23  1h23m  pi       sonnet-4-5     12k     $1.23\n" +
-		"dotfiles        a-much-longer-session-name  11:00-11:05  5m     claude   gpt-5-mystery  500     $0.50\n" +
-		"--------------  --------------------------  -----------  -----  -------  -------------  ------  -----\n" +
-		"TOTAL           2 sessions                               1h28m                          13k     $1.73\n"
+		"╭────────────────┬────────────────────────────┬─────────────┬───────┬─────────┬───────────────┬────────┬───────╮\n" +
+		"│ PROJECT        │ SESSION                    │ TIME        │ DUR   │ HARNESS │ MODEL         │ TOKENS │ COST  │\n" +
+		"├────────────────┼────────────────────────────┼─────────────┼───────┼─────────┼───────────────┼────────┼───────┤\n" +
+		"│ agent-sessions │ fix-widths *               │ 09:00-10:23 │ 1h23m │ pi      │ sonnet-4-5    │ 12k    │ $1.23 │\n" +
+		"│ dotfiles       │ a-much-longer-session-name │ 11:00-11:05 │ 5m    │ claude  │ gpt-5-mystery │ 500    │ $0.50 │\n" +
+		"│ TOTAL          │ 2 sessions                 │             │ 1h28m │         │               │ 13k    │ $1.73 │\n" +
+		"╰────────────────┴────────────────────────────┴─────────────┴───────┴─────────┴───────────────┴────────┴───────╯\n"
 
 	if w.String() != want {
 		t.Errorf("stdout mismatch\ngot:\n%s\nwant:\n%s", w.String(), want)
 	}
 	if errW.String() != "" {
 		t.Errorf("errW = %q, want empty", errW.String())
+	}
+}
+
+func TestRenderTablePlainUsesASCIIBorders(t *testing.T) {
+	rows := mkTestRows()
+	rows[1].Priced = true
+
+	var w, errW bytes.Buffer
+	renderTable(&w, &errW, rows, false, true)
+
+	want := "" +
+		"+----------------+----------------------------+-------------+-------+---------+---------------+--------+-------+\n" +
+		"| PROJECT        | SESSION                    | TIME        | DUR   | HARNESS | MODEL         | TOKENS | COST  |\n" +
+		"+----------------+----------------------------+-------------+-------+---------+---------------+--------+-------+\n" +
+		"| agent-sessions | fix-widths *               | 09:00-10:23 | 1h23m | pi      | sonnet-4-5    | 12k    | $1.23 |\n" +
+		"| dotfiles       | a-much-longer-session-name | 11:00-11:05 | 5m    | claude  | gpt-5-mystery | 500    | $0.50 |\n" +
+		"| TOTAL          | 2 sessions                 |             | 1h28m |         |               | 13k    | $1.73 |\n" +
+		"+----------------+----------------------------+-------------+-------+---------+---------------+--------+-------+\n"
+
+	if w.String() != want {
+		t.Errorf("stdout mismatch\ngot:\n%s\nwant:\n%s", w.String(), want)
 	}
 }

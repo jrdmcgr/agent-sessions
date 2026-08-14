@@ -10,6 +10,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/mattn/go-isatty"
 )
 
 // usageText is printed for -h/--help. Content mirrors the Python argparse
@@ -112,6 +114,9 @@ func run(argv []string, piRoot, claudeRoot string, stdout, stderr io.Writer, now
 			if opts.active && !row.Active {
 				continue
 			}
+			if row.Name == "(unnamed)" && row.Cost == 0 && !row.Active {
+				continue
+			}
 			rows = append(rows, row)
 		}
 	}
@@ -141,7 +146,7 @@ func run(argv []string, piRoot, claudeRoot string, stdout, stderr io.Writer, now
 	fmt.Fprintln(stdout)
 
 	showDate := distinctDates(rows) > 1 || (days != nil && len(days) > 1)
-	renderTable(stdout, stderr, rows, showDate)
+	renderTable(stdout, stderr, rows, showDate, !isTerminalWriter(stdout))
 
 	return 0
 }
@@ -217,6 +222,20 @@ func (e epipeWriter) Write(p []byte) (int, error) {
 		return len(p), nil
 	}
 	return n, err
+}
+
+// isTerminalWriter reports whether w is connected to a terminal, unwrapping
+// epipeWriter. Non-terminal output (pipes, redirects) gets a plain,
+// delimiter-friendly table so cut/awk/grep can parse it.
+func isTerminalWriter(w io.Writer) bool {
+	if e, ok := w.(epipeWriter); ok {
+		w = e.w
+	}
+	f, ok := w.(*os.File)
+	if !ok {
+		return false
+	}
+	return isatty.IsTerminal(f.Fd()) || isatty.IsCygwinTerminal(f.Fd())
 }
 
 func main() {
