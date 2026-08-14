@@ -1,5 +1,19 @@
 # Plan: Rewrite `sessions` in Go
 
+> **Status (2026-08-13): the port is complete and these three constraints are retired.**
+> The goal is now a general session query tool, not a byte-identical clone of the Python
+> `sessions` (see `TODO.md` and `docs/plans/002-extract-archive-session.md`). Specifically:
+> - **"The Python script is the spec" / "match Python behavior exactly"** no longer holds — the
+>   tool diverges on purpose (LiteLLM-sourced pricing, principled session-span semantics).
+> - **"No third-party dependencies — stdlib only"** is lifted — `lipgloss` (styled table) and
+>   `go-isatty` (pipe fallback) are in use.
+> - **"table compared byte-for-byte" parity** is dropped; `bin/parity` was deleted because it
+>   re-reverted wanted work (it caused the `6ed117c` revert). The Python remains a useful
+>   reference for *why* a function exists, not a gate.
+>
+> The rest of this file is the original port plan, kept as the historical record of how the
+> tool was first built.
+
 ## Source
 
 The reference implementation is `~/Code/dotfiles/bin/sessions` (Python, ~570 lines). It lists
