@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+# Open an interactive pi subagent in a new herdr worktree pane. The visible,
+# supervised counterpart to spawn-subagent (which runs headless). Bare by
+# default so you can drive the child yourself; pass a task to seed it, or
+# --fork to carry the current session's conversation into a parallel branch.
+#
+# This is mostly executable documentation: it remembers the herdr subcommands,
+# the JSON field paths, and the env vars (PI_SESSION_ID, HERDR_*) so you don't.
+#
+# Must be run from inside a herdr pane. --fork must be run from inside pi.
+#
+# Usage:
+#   spawn-pane [task-file|prompt] [options]
+#
+# Options:
+#   -f, --fork          Fork the current pi session ($PI_SESSION_ID) into the
+#                       child, so it starts holding this conversation. Doubles
+#                       the context on purpose — for branch-and-explore.
+#   -n, --name NAME     Agent name / branch slug / pane label (default: child,
+#                       or a task file's basename)
+#   -m, --model MODEL   Model (default: inherit pi's default)
+#   -b, --base REF      Worktree base ref (default: HEAD)
+#       --no-focus      Create the pane without focusing it
+#   -h, --help          Show this help
+#
+# The child runs interactively (not pi -p), so its session is persisted and the
+# `sessions` report captures its cost/duration automatically. herdr owns the
+# worktree lifecycle; clean up with the `worktree remove` command it prints.
+set -euo pipefail
+
+function usage {
+	sed -n '2,32p' "$0" | sed 's/^# \{0,1\}//'
+	exit "${1:-0}"
+}
+
+fork=0
+name=""
+model=""
+base="HEAD"
+focus="--focus"
+task=""
+
+while [[ $# -gt 0 ]]; do
+	case "$1" in
+		-f|--fork)   fork=1; shift ;;
+		-n|--name)   name="$2"; shift 2 ;;
+		-m|--model)  model="$2"; shift 2 ;;
+		-b|--base)   base="$2"; shift 2 ;;
+		--no-focus)  focus="--no-focus"; shift ;;
+		-h|--help)   usage 0 ;;
+		-*)          echo "unknown option: $1" >&2; usage 1 ;;
+		*)           task="$1"; shift ;;
+	esac
+done
+
+[[ -n "${HERDR_SOCKET_PATH:-}" ]] \
+	|| { echo "error: not inside herdr (no HERDR_SOCKET_PATH)" >&2; exit 1; }
+
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" \
+	|| { echo "error: not inside a git repository" >&2; exit 1; }
+
+# Resolve the optional seed task. A file becomes a @-reference (absolute, so it
+# resolves from the worktree cwd); anything else is a literal prompt.
+seed=""
+if [[ -n "$task" ]]; then
+	if [[ -f "$task" ]]; then
+		task_abs="$(cd "$(dirname "$task")" && pwd)/$(basename "$task")"
+		seed="Read @${task_abs} and follow the instructions."
+		[[ -n "$name" ]] || name="$(basename "$task")"
+	else
+		seed="$task"
+	fi
+fi
+[[ -n "$name" ]] || name="child"
+
+# Assemble pi startup args passed after `--` to `agent start`.
+pi_args=()
+[[ -n "$model" ]] && pi_args+=(--model "$model")
+if [[ "$fork" -eq 1 ]]; then
+	[[ -n "${PI_SESSION_ID:-}" ]] \
+		|| { echo "error: --fork needs PI_SESSION_ID (run inside pi)" >&2; exit 1; }
+	pi_args+=(--fork "$PI_SESSION_ID")
+fi
+
+slug="$(printf '%s' "$name" | tr '[:upper:] ' '[:lower:]-' | tr -cd 'a-z0-9-')"
+branch="subagent/${slug}-$(date +%Y%m%d-%H%M%S)"
+
+# 1. herdr creates the worktree AND opens it as a workspace/pane.
+created="$(herdr worktree create \
+	--cwd "$repo_root" \
+	--branch "$branch" \
+	--base "$base" \
+	--label "$name" \
+	$focus --json)"
+
+pane_id="$(jq -r '.result.root_pane.pane_id' <<<"$created")"
+workspace_id="$(jq -r '.result.workspace.workspace_id' <<<"$created")"
+wt_path="$(jq -r '.result.worktree.path' <<<"$created")"
+
+[[ -n "$pane_id" && "$pane_id" != "null" ]] \
+	|| { echo "error: could not read pane id from worktree create" >&2; echo "$created" >&2; exit 1; }
+
+# 2. Start pi in that pane (interactive; args after --).
+if [[ ${#pi_args[@]} -gt 0 ]]; then
+	herdr agent start "$name" --kind pi --pane "$pane_id" -- "${pi_args[@]}" >/dev/null
+else
+	herdr agent start "$name" --kind pi --pane "$pane_id" >/dev/null
+fi
+
+# 3. Optionally seed the task (bare otherwise — you drive it).
+[[ -n "$seed" ]] && herdr agent prompt "$name" "$seed" >/dev/null
+
+echo "=== spawn-pane ===" >&2
+printf 'agent:     %s\n' "$name" >&2
+printf 'pane:      %s\n' "$pane_id" >&2
+printf 'branch:    %s\n' "$branch" >&2
+printf 'worktree:  %s\n' "$wt_path" >&2
+printf 'forked:    %s\n' "$([[ $fork -eq 1 ]] && echo "from $PI_SESSION_ID" || echo no)" >&2
+printf 'seeded:    %s\n' "$([[ -n "$seed" ]] && echo yes || echo "no — drive it yourself")" >&2
+echo "cleanup:   herdr worktree remove --workspace ${workspace_id}" >&2
