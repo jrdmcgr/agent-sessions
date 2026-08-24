@@ -1,4 +1,4 @@
-module agent-sessions
+module github.com/jrdmcgr/agent-sessions
 
 go 1.22
 
