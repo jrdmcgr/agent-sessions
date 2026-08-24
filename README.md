@@ -24,7 +24,7 @@ Download a prebuilt binary from the [Releases page](https://github.com/jrdmcgr/a
 
 ```bash
 tar -xzf sessions_0.1.0_darwin_arm64.tar.gz
-sha256sum -c checksums.txt
+shasum -a 256 -c checksums.txt   # macOS; use sha256sum -c checksums.txt on Linux
 ```
 
 ## Usage
@@ -67,20 +67,20 @@ This reads a pi or Claude Code session file and emits a JSON record with session
 
 ## Example
 
-List all sessions on 2026-08-24:
+List all sessions on a given day (illustrative output — your projects and session names will differ):
 
 ```bash
 $ sessions 2026-08-24
 
 Wednesday 2026-08-24
 
-│ Harness │ ID       │ Name              │ Project           │ Started     │ Duration │ Messages │ Tokens │ Cost   │
-├─────────┼──────────┼───────────────────┼───────────────────┼─────────────┼──────────┼──────────┼────────┼────────┤
-│ claude  │ a1b2c3d4 │ Team incidents… │ qgiv              │ 08:11       │ 1 min    │ 2        │ 8,240  │ $0.13  │
-│ claude  │ e5f6g7h8 │ Apple-ppi CLI… │ apple-pay-platf…  │ 11:54       │ 1h 58m   │ 54       │ 312,415│ $4.67  │
-│ pi      │ i9j0k1l2 │ (unnamed)       │ agent-sessions    │ 15:40       │ 0 min    │ 2        │ 1,240  │ —      │
+│ Harness │ ID       │ Name              │ Project    │ Started │ Duration │ Messages │ Tokens  │ Cost   │
+├─────────┼──────────┼───────────────────┼────────────┼─────────┼──────────┼──────────┼─────────┼────────┤
+│ claude  │ a1b2c3d4 │ Fix flaky test    │ widget-api │ 08:11   │ 12 min   │ 8        │ 8,240   │ $0.13  │
+│ claude  │ e5f6g7h8 │ Refactor CLI      │ dotfiles   │ 11:54   │ 1h 58m   │ 54       │ 312,415 │ $4.67  │
+│ pi      │ i9j0k1l2 │ (unnamed)         │ my-project │ 15:40   │ 4 min    │ 2        │ 1,240   │ —      │
 
-Total: 3 session-days │ 58 messages │ 321,895 tokens │ $4.80
+Total: 3 session-days │ 64 messages │ 321,895 tokens │ $4.80
 ```
 
 List sessions from the last week, grouped by harness:
