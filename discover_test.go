@@ -118,7 +118,7 @@ func TestDiscoverInNonexistentRoots(t *testing.T) {
 func TestDecodeSlug(t *testing.T) {
 	cases := map[string]string{
 		"-Users-JaredMcGuire-Code-dotfiles": "/Users/JaredMcGuire/Code/dotfiles",
-		"": "/",
+		"":                                  "/",
 	}
 	for in, want := range cases {
 		if got := decodeSlug(in); got != want {

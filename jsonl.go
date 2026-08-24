@@ -94,6 +94,7 @@ func getBool(m map[string]any, key string) bool {
 //   - if content is a []any, return the "text" of the first element that is a
 //     map with "type" == "text" (empty string if that text is missing/nil)
 //   - otherwise return ""
+//
 // Ports first_text from the Python.
 func firstText(content any) string {
 	switch v := content.(type) {

@@ -64,9 +64,9 @@ func TestShowClaudeRecord(t *testing.T) {
 		"custom_title": {rec.CustomTitle, "My Title"},
 		"name":         {rec.Name, "My Title"},
 		"summary":      {rec.Summary, "Please refactor the parser"}, // isMeta turn skipped
-		"started_at":   {rec.StartedAt, "2026-08-05T10:00:00Z"},      // raw, as recorded
+		"started_at":   {rec.StartedAt, "2026-08-05T10:00:00Z"},     // raw, as recorded
 		"ended_at":     {rec.EndedAt, "2026-08-05T10:03:00Z"},
-		"model":        {rec.Model, "claude-sonnet-4-5"},            // full id, not shortened
+		"model":        {rec.Model, "claude-sonnet-4-5"}, // full id, not shortened
 	}
 	for field, c := range checks {
 		if c.got != c.want {
