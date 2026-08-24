@@ -290,3 +290,33 @@ func TestRunEmptyRowsJSON(t *testing.T) {
 		t.Errorf("empty result set should print []: %q", stdout.String())
 	}
 }
+
+func TestRunVersion(t *testing.T) {
+	tmp := t.TempDir()
+	piRoot := filepath.Join(tmp, "pi")
+	claudeRoot := filepath.Join(tmp, "claude")
+	var stdout, stderr bytes.Buffer
+
+	code := run([]string{"--version"}, piRoot, claudeRoot, &stdout, &stderr, fixedNow)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0", code)
+	}
+	if stdout.String() != "sessions dev\n" {
+		t.Errorf("--version output = %q, want %q", stdout.String(), "sessions dev\n")
+	}
+}
+
+func TestRunVersionShort(t *testing.T) {
+	tmp := t.TempDir()
+	piRoot := filepath.Join(tmp, "pi")
+	claudeRoot := filepath.Join(tmp, "claude")
+	var stdout, stderr bytes.Buffer
+
+	code := run([]string{"-v"}, piRoot, claudeRoot, &stdout, &stderr, fixedNow)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0", code)
+	}
+	if stdout.String() != "sessions dev\n" {
+		t.Errorf("-v output = %q, want %q", stdout.String(), "sessions dev\n")
+	}
+}

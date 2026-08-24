@@ -27,6 +27,7 @@ positional arguments:
 
 options:
   -h, --help            show this help message and exit
+  -v, --version         print the version and exit
   --week [OFFSET]       calendar week, Monday-based; OFFSET -1 is last week
   --yesterday           yesterday only
   --all                 every session on disk
@@ -66,6 +67,10 @@ type jsonRow struct {
 // run executes the program against explicit roots and writers so tests can
 // inject fixtures. Returns an exit code.
 func run(argv []string, piRoot, claudeRoot string, stdout, stderr io.Writer, now time.Time) int {
+	if len(argv) > 0 && (argv[0] == "--version" || argv[0] == "-v") {
+		fmt.Fprintln(stdout, "sessions "+version)
+		return 0
+	}
 	if len(argv) > 0 && argv[0] == "show" {
 		return runShow(argv[1:], stdout, stderr)
 	}
