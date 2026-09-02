@@ -34,7 +34,7 @@ esac
 # Fetch latest release tag from GitHub API
 printf "Fetching latest release...\n" >&2
 release_response=$(curl -fsSL https://api.github.com/repos/jrdmcgr/agent-sessions/releases/latest)
-tag=$(printf '%s' "$release_response" | grep -o '"tag_name":"[^"]*' | sed 's/"tag_name":"//' | head -n1)
+tag=$(printf '%s' "$release_response" | grep -o '"tag_name": *"[^"]*"' | head -n1 | sed -E 's/.*"([^"]+)"$/\1/')
 
 if [ -z "$tag" ]; then
   printf "Error: could not determine latest release tag\n" >&2
