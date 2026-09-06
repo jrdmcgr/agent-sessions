@@ -1,16 +1,17 @@
 package main
 
 import (
-	"errors"
 	"fmt"
+	"io"
 	"strconv"
-	"strings"
 	"time"
+
+	"github.com/spf13/cobra"
 )
 
-// errHelp is returned by parseArgs when -h/--help was requested. main prints
-// usage (owned by task 11) and exits 0 when it sees this sentinel.
-var errHelp = errors.New("help requested")
+// errHelp is retained for callers of parseArgs. Commands themselves let Cobra
+// render help directly.
+var errHelp = fmt.Errorf("help requested")
 
 // options holds the parsed command line.
 type options struct {
@@ -27,171 +28,112 @@ type options struct {
 	jsonOut   bool
 }
 
-// whenFlagName describes which mutually-exclusive "when" flag has already
-// been set, for error messages; "" means none yet.
-func setWhen(current *string, name string) error {
-	if *current != "" && *current != name {
-		return fmt.Errorf("argument --%s: not allowed with argument --%s", name, *current)
+// newListCommand constructs the default sessions command. Its flags and
+// validation live in one place, so both the executable and parseArgs use the
+// same Cobra parser.
+func newListCommand(o *options, run func() error) *cobra.Command {
+	var since, until string
+	var showVersion bool
+	cmd := &cobra.Command{
+		Use:           "sessions [date]",
+		Short:         "List pi and Claude Code sessions worked on in a date range.",
+		Args:          cobra.MaximumNArgs(1),
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if showVersion {
+				_, err := fmt.Fprintln(cmd.OutOrStdout(), "sessions "+version)
+				return err
+			}
+			if len(args) == 1 {
+				d, err := parseDay(args[0])
+				if err != nil {
+					return err
+				}
+				o.date = d
+			}
+			if o.harness != "" && o.harness != HarnessPi && o.harness != HarnessClaude {
+				return fmt.Errorf("invalid argument %q for --harness: choose from %q, %q", o.harness, HarnessPi, HarnessClaude)
+			}
+			if since != "" {
+				d, err := parseDay(since)
+				if err != nil {
+					return err
+				}
+				o.since = d
+			}
+			if until != "" {
+				d, err := parseDay(until)
+				if err != nil {
+					return err
+				}
+				o.until = d
+			}
+			if cmd.Flags().Changed("week") {
+				week, err := cmd.Flags().GetInt("week")
+				if err != nil {
+					return err
+				}
+				o.week = &week
+			}
+			return run()
+		},
 	}
-	*current = name
-	return nil
+	cmd.Flags().BoolVarP(&showVersion, "version", "v", false, "print the version and exit")
+	cmd.Flags().Int("week", 0, "calendar week, Monday-based; OFFSET -1 is last week")
+	// pflag's NoOptDefVal preserves the useful `--week` shorthand while still
+	// accepting `--week=-1` and `--week -1`.
+	cmd.Flags().Lookup("week").NoOptDefVal = "0"
+	cmd.Flags().BoolVar(&o.yesterday, "yesterday", false, "yesterday only")
+	cmd.Flags().BoolVar(&o.all, "all", false, "every session on disk")
+	cmd.Flags().StringVar(&o.project, "project", "", "filter by cwd/repo substring")
+	cmd.Flags().StringVar(&o.harness, "harness", "", "filter by harness (pi or claude)")
+	cmd.Flags().BoolVar(&o.active, "active", false, "only sessions touched in the last 2h")
+	cmd.Flags().BoolVar(&o.temp, "temp", false, "include sessions run from temp dirs")
+	cmd.Flags().BoolVar(&o.jsonOut, "json", false, "emit JSON instead of a table")
+	cmd.Flags().StringVar(&since, "since", "", "start date (YYYY-MM-DD)")
+	cmd.Flags().StringVar(&until, "until", "", "end date (YYYY-MM-DD)")
+	cmd.MarkFlagsMutuallyExclusive("week", "yesterday", "all")
+	return cmd
 }
 
-// parseArgs parses argv (excluding the program name). On error, returns a
-// non-nil error whose message names the offending flag/value. Handles -h and
-// --help by returning a sentinel errHelp after usage is available to main.
+// parseArgs remains a small testable adapter around Cobra's parser.
 func parseArgs(argv []string) (*options, error) {
-	o := &options{}
-	haveDate := false
-	when := "" // tracks which of --week/--yesterday/--all was set first
-
-	// next returns the value for a flag given either "--flag=value" (val,
-	// true) or by consuming the next argv token ("--flag value").
-	next := func(i *int, flag, inlineVal string, hasInline bool) (string, error) {
-		if hasInline {
-			return inlineVal, nil
-		}
-		if *i+1 >= len(argv) {
-			return "", fmt.Errorf("argument --%s: expected one argument", flag)
-		}
-		*i++
-		return argv[*i], nil
-	}
-
-	for i := 0; i < len(argv); i++ {
-		arg := argv[i]
-
+	for _, arg := range argv {
 		if arg == "-h" || arg == "--help" {
 			return nil, errHelp
 		}
-
-		if len(arg) >= 2 && arg[0] == '-' && arg[1] == '-' && arg != "--" {
-			name := arg[2:]
-			inlineVal, hasInline := "", false
-			if before, after, found := strings.Cut(name, "="); found {
-				name, inlineVal, hasInline = before, after, true
-			}
-
-			switch name {
-			case "week":
-				if err := setWhen(&when, "week"); err != nil {
-					return nil, err
-				}
-				val := 0
-				if hasInline {
-					n, err := strconv.Atoi(inlineVal)
-					if err != nil {
-						return nil, fmt.Errorf("argument --week: invalid int value: %q", inlineVal)
-					}
-					val = n
-				} else if i+1 < len(argv) {
-					if n, err := strconv.Atoi(argv[i+1]); err == nil {
-						val = n
-						i++
-					}
-				}
-				v := val
-				o.week = &v
-
-			case "yesterday":
-				if err := setWhen(&when, "yesterday"); err != nil {
-					return nil, err
-				}
-				if hasInline {
-					return nil, fmt.Errorf("argument --yesterday: ignored explicit argument %q", inlineVal)
-				}
-				o.yesterday = true
-
-			case "all":
-				if err := setWhen(&when, "all"); err != nil {
-					return nil, err
-				}
-				if hasInline {
-					return nil, fmt.Errorf("argument --all: ignored explicit argument %q", inlineVal)
-				}
-				o.all = true
-
-			case "since":
-				val, err := next(&i, "since", inlineVal, hasInline)
-				if err != nil {
-					return nil, err
-				}
-				d, err := parseDay(val)
-				if err != nil {
-					return nil, err
-				}
-				o.since = d
-
-			case "until":
-				val, err := next(&i, "until", inlineVal, hasInline)
-				if err != nil {
-					return nil, err
-				}
-				d, err := parseDay(val)
-				if err != nil {
-					return nil, err
-				}
-				o.until = d
-
-			case "project":
-				val, err := next(&i, "project", inlineVal, hasInline)
-				if err != nil {
-					return nil, err
-				}
-				o.project = val
-
-			case "harness":
-				val, err := next(&i, "harness", inlineVal, hasInline)
-				if err != nil {
-					return nil, err
-				}
-				if val != HarnessPi && val != HarnessClaude {
-					return nil, fmt.Errorf("argument --harness: invalid choice: %q (choose from %q, %q)", val, HarnessPi, HarnessClaude)
-				}
-				o.harness = val
-
-			case "active":
-				if hasInline {
-					return nil, fmt.Errorf("argument --active: ignored explicit argument %q", inlineVal)
-				}
-				o.active = true
-
-			case "temp":
-				if hasInline {
-					return nil, fmt.Errorf("argument --temp: ignored explicit argument %q", inlineVal)
-				}
-				o.temp = true
-
-			case "json":
-				if hasInline {
-					return nil, fmt.Errorf("argument --json: ignored explicit argument %q", inlineVal)
-				}
-				o.jsonOut = true
-
-			default:
-				return nil, fmt.Errorf("unrecognized arguments: %s", arg)
-			}
-			continue
-		}
-
-		// Positional.
-		if haveDate {
-			return nil, fmt.Errorf("unrecognized arguments: %s", arg)
-		}
-		d, err := parseDay(arg)
-		if err != nil {
-			return nil, err
-		}
-		o.date = d
-		haveDate = true
 	}
-
+	o := &options{}
+	cmd := newListCommand(o, func() error { return nil })
+	cmd.SetArgs(normalizeWeekArg(argv))
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	if err := cmd.Execute(); err != nil {
+		return nil, err
+	}
 	return o, nil
 }
 
-// parseDay parses "YYYY-MM-DD" strictly (time.ParseInLocation with layout
-// "2006-01-02" in time.Local, then dayOf). Error message:
-// `expected YYYY-MM-DD, got "<value>"`.
+// normalizeWeekArg preserves the previous optional-argument behavior. pflag
+// deliberately treats a following `-1` as another flag, while this CLI has
+// always accepted `--week -1` as well as `--week=-1`.
+func normalizeWeekArg(argv []string) []string {
+	out := make([]string, 0, len(argv))
+	for i := 0; i < len(argv); i++ {
+		if argv[i] == "--week" && i+1 < len(argv) {
+			if _, err := strconv.Atoi(argv[i+1]); err == nil {
+				out = append(out, "--week="+argv[i+1])
+				i++
+				continue
+			}
+		}
+		out = append(out, argv[i])
+	}
+	return out
+}
+
+// parseDay parses "YYYY-MM-DD" strictly.
 func parseDay(value string) (time.Time, error) {
 	t, err := time.ParseInLocation("2006-01-02", value, time.Local)
 	if err != nil {
@@ -200,10 +142,6 @@ func parseDay(value string) (time.Time, error) {
 	return dayOf(t), nil
 }
 
-// weekBounds returns the Monday and Sunday (inclusive) of the calendar week
-// `offset` weeks from the current one. Monday-based: Go's Weekday() has
-// Sunday=0, Python's weekday() has Monday=0 — convert carefully:
-// daysSinceMonday := (int(today.Weekday()) + 6) % 7. Ports week_bounds.
 func weekBounds(offset int, today time.Time) (time.Time, time.Time) {
 	daysSinceMonday := (int(today.Weekday()) + 6) % 7
 	monday := dayOf(today).AddDate(0, 0, -daysSinceMonday+offset*7)
@@ -211,11 +149,6 @@ func weekBounds(offset int, today time.Time) (time.Time, time.Time) {
 	return monday, sunday
 }
 
-// resolveRange maps options to an inclusive (start, end) day pair, both zero
-// for --all. Precedence, matching Python resolve_range exactly:
-// all → (zero, zero); positional date → (date, date); since/until set →
-// (since or 1970-01-01, until or today); week non-nil → weekBounds;
-// yesterday → (yesterday, yesterday); default → (today, today).
 func resolveRange(o *options, today time.Time) (time.Time, time.Time) {
 	if o.all {
 		return time.Time{}, time.Time{}

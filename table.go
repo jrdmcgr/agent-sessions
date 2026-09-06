@@ -9,13 +9,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
-)
-
-var (
-	tableBorderColor = lipgloss.Color("62")
-	tableHeaderStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212")).Padding(0, 1)
-	tableCellStyle   = lipgloss.NewStyle().Padding(0, 1)
-	tableTotalStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("86")).Padding(0, 1)
+	"github.com/muesli/termenv"
 )
 
 // renderTable writes the session table to w (stdout in production).
@@ -101,17 +95,23 @@ func renderTable(w, errW io.Writer, rows []Row, showDate, plain bool) {
 
 	totalRowIdx := len(body)
 
+	// Use a renderer tied to the destination rather than Lipgloss's global
+	// renderer. That keeps in-memory writers (and pipes) deterministic even
+	// when the invoking terminal supports or forces color.
+	renderer := lipgloss.NewRenderer(w)
+	if plain || !isTerminalWriter(w) {
+		renderer.SetColorProfile(termenv.Ascii)
+	}
 	border := lipgloss.RoundedBorder()
-	borderStyle := lipgloss.NewStyle().Foreground(tableBorderColor)
-	headerStyle := tableHeaderStyle
-	cellStyle := tableCellStyle
-	totalStyle := tableTotalStyle
+	borderStyle := renderer.NewStyle().Foreground(lipgloss.Color("62"))
+	headerStyle := renderer.NewStyle().Bold(true).Foreground(lipgloss.Color("212")).Padding(0, 1)
+	cellStyle := renderer.NewStyle().Padding(0, 1)
+	totalStyle := renderer.NewStyle().Bold(true).Foreground(lipgloss.Color("86")).Padding(0, 1)
 	if plain {
 		border = lipgloss.ASCIIBorder()
-		borderStyle = lipgloss.NewStyle()
-		headerStyle = lipgloss.NewStyle().Padding(0, 1)
-		cellStyle = lipgloss.NewStyle().Padding(0, 1)
-		totalStyle = lipgloss.NewStyle().Padding(0, 1)
+		borderStyle = renderer.NewStyle()
+		headerStyle = renderer.NewStyle().Padding(0, 1)
+		totalStyle = renderer.NewStyle().Padding(0, 1)
 	}
 
 	t := table.New().

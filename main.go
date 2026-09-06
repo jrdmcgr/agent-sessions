@@ -14,34 +14,6 @@ import (
 	"github.com/mattn/go-isatty"
 )
 
-// usageText is printed for -h/--help. Content mirrors the Python argparse
-// help closely enough to be useful; exact wording is ours to choose.
-const usageText = `usage: sessions [-h] [--week [OFFSET] | --yesterday | --all] [--since YYYY-MM-DD]
-                 [--until YYYY-MM-DD] [--project SUBSTR] [--harness {pi,claude}]
-                 [--active] [--temp] [--json] [date]
-
-List pi and Claude Code sessions worked on in a date range.
-
-positional arguments:
-  date                  a single day (YYYY-MM-DD)
-
-options:
-  -h, --help            show this help message and exit
-  -v, --version         print the version and exit
-  --week [OFFSET]       calendar week, Monday-based; OFFSET -1 is last week
-  --yesterday           yesterday only
-  --all                 every session on disk
-  --since YYYY-MM-DD
-  --until YYYY-MM-DD
-  --project SUBSTR      filter by cwd/repo substring
-  --harness {pi,claude}  filter by harness
-  --active              only sessions touched in the last 2h
-  --temp                include sessions run from temp dirs (prompt-eval fixtures)
-  --json                emit JSON instead of a table
-
-Defaults to today. Rows are session-days; totals sum the range.
-`
-
 // jsonRow is the on-the-wire shape for --json output. Field order here is
 // the emitted key order.
 type jsonRow struct {
@@ -67,22 +39,30 @@ type jsonRow struct {
 // run executes the program against explicit roots and writers so tests can
 // inject fixtures. Returns an exit code.
 func run(argv []string, piRoot, claudeRoot string, stdout, stderr io.Writer, now time.Time) int {
-	if len(argv) > 0 && (argv[0] == "--version" || argv[0] == "-v") {
-		fmt.Fprintln(stdout, "sessions "+version)
-		return 0
-	}
 	if len(argv) > 0 && argv[0] == "show" {
 		return runShow(argv[1:], stdout, stderr)
 	}
 
-	opts, err := parseArgs(argv)
-	if err != nil {
-		if err == errHelp {
-			fmt.Fprint(stdout, usageText)
+	opts := &options{}
+	cmd := newListCommand(opts, func() error { return nil })
+	cmd.SetOut(stdout)
+	cmd.SetErr(stderr)
+	cmd.SetArgs(normalizeWeekArg(argv))
+	for _, arg := range argv {
+		if arg == "-h" || arg == "--help" {
+			if err := cmd.Help(); err != nil {
+				fmt.Fprintln(stderr, err)
+				return 1
+			}
 			return 0
 		}
+	}
+	if err := cmd.Execute(); err != nil {
 		fmt.Fprintln(stderr, err)
 		return 2
+	}
+	if cmd.Flags().Changed("version") {
+		return 0
 	}
 
 	start, end := resolveRange(opts, now)
@@ -150,7 +130,7 @@ func run(argv []string, piRoot, claudeRoot string, stdout, stderr io.Writer, now
 	fmt.Fprintln(stdout, header)
 	fmt.Fprintln(stdout)
 
-	showDate := distinctDates(rows) > 1 || (days != nil && len(days) > 1)
+	showDate := distinctDates(rows) > 1 || (len(days) > 1)
 	renderTable(stdout, stderr, rows, showDate, !isTerminalWriter(stdout))
 
 	return 0
@@ -211,12 +191,8 @@ func writeJSON(w io.Writer, rows []Row) {
 	}
 }
 
-// epipeWriter swallows broken-pipe write errors so `sessions | head` doesn't
-// print a panic/error. Go's os.Stdout.Write returns a plain error (not a
-// signal) on EPIPE, so unlike Python we don't need a signal handler — just
-// ignore the write error here. Divergence from Python: we do not exit 130 on
-// SIGINT; Go's default ^C behavior (process death, no special exit code
-// handling) is accepted as-is per the task spec.
+// epipeWriter wraps an io.Writer and ignores EPIPE errors, which occur when
+// the output is piped to a command that exits early (e.g., head, less, grep).
 type epipeWriter struct {
 	w io.Writer
 }
