@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -318,5 +319,42 @@ func TestRunVersionShort(t *testing.T) {
 	}
 	if stdout.String() != "sessions dev\n" {
 		t.Errorf("-v output = %q, want %q", stdout.String(), "sessions dev\n")
+	}
+}
+
+// TestUnwrapWriterUnwrapsEpipeWriter guards the regression from the Cobra
+// migration (b6b8be4): renderTable used to build its lipgloss.Renderer from
+// the writer it was handed directly. In production that writer is always
+// epipeWriter{os.Stdout}, never a bare *os.File, and termenv's isTTY check
+// only recognizes a literal *os.File -- so color silently and permanently
+// dropped out even in a real terminal. unwrapWriter is what renderTable and
+// isTerminalWriter must both call before any *os.File type assertion.
+func TestUnwrapWriterUnwrapsEpipeWriter(t *testing.T) {
+	f := os.Stdout
+	wrapped := epipeWriter{f}
+
+	got := unwrapWriter(wrapped)
+	if got != io.Writer(f) {
+		t.Errorf("unwrapWriter(epipeWriter{f}) = %v, want the wrapped *os.File itself", got)
+	}
+
+	// A writer that isn't epipeWriter passes through unchanged.
+	var buf bytes.Buffer
+	if unwrapWriter(&buf) != io.Writer(&buf) {
+		t.Errorf("unwrapWriter should pass through a non-epipeWriter unchanged")
+	}
+}
+
+// TestIsTerminalWriterUsesUnwrappedFile: isTerminalWriter must see through
+// epipeWriter to do its *os.File assertion, matching unwrapWriter's contract
+// (this already worked before the regression; kept here so both call sites
+// are pinned to the same helper instead of drifting again).
+func TestIsTerminalWriterUsesUnwrappedFile(t *testing.T) {
+	var buf bytes.Buffer
+	if isTerminalWriter(epipeWriter{&buf}) {
+		t.Errorf("isTerminalWriter(epipeWriter{bytes.Buffer}) = true, want false")
+	}
+	if isTerminalWriter(&buf) {
+		t.Errorf("isTerminalWriter(bytes.Buffer) = true, want false")
 	}
 }

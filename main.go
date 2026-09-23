@@ -212,14 +212,23 @@ func (e epipeWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
+// unwrapWriter strips epipeWriter down to the underlying writer it guards,
+// e.g. *os.File for the real stdout. Anything that inspects the writer's
+// concrete type (isatty checks, termenv's own TTY detection) needs this: the
+// wrapper struct itself is never a *os.File, so an unwrapped check silently
+// and permanently reports "not a terminal" even when stdout plainly is one.
+func unwrapWriter(w io.Writer) io.Writer {
+	if e, ok := w.(epipeWriter); ok {
+		return e.w
+	}
+	return w
+}
+
 // isTerminalWriter reports whether w is connected to a terminal, unwrapping
 // epipeWriter. Non-terminal output (pipes, redirects) gets a plain,
 // delimiter-friendly table so cut/awk/grep can parse it.
 func isTerminalWriter(w io.Writer) bool {
-	if e, ok := w.(epipeWriter); ok {
-		w = e.w
-	}
-	f, ok := w.(*os.File)
+	f, ok := unwrapWriter(w).(*os.File)
 	if !ok {
 		return false
 	}

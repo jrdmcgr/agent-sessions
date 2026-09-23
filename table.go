@@ -97,8 +97,12 @@ func renderTable(w, errW io.Writer, rows []Row, showDate, plain bool) {
 
 	// Use a renderer tied to the destination rather than Lipgloss's global
 	// renderer. That keeps in-memory writers (and pipes) deterministic even
-	// when the invoking terminal supports or forces color.
-	renderer := lipgloss.NewRenderer(w)
+	// when the invoking terminal supports or forces color. Detection needs
+	// the unwrapped writer: termenv's isTTY only recognizes a literal
+	// *os.File, and production's w is epipeWriter{os.Stdout} (see
+	// unwrapWriter) -- passing w itself here always looks like a non-tty and
+	// silently drops color even when stdout is a real terminal.
+	renderer := lipgloss.NewRenderer(unwrapWriter(w))
 	if plain || !isTerminalWriter(w) {
 		renderer.SetColorProfile(termenv.Ascii)
 	}
