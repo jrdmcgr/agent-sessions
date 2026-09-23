@@ -7,16 +7,36 @@ import (
 )
 
 // dayBucket accumulates one calendar day's worth of a session's events.
+// sub* fields are the isolated subagent portion, kept separate from
+// usage/cost/priced/unpriced so Row can report both the merged total and the
+// breakdown (see Row).
 type dayBucket struct {
-	first, last  time.Time
-	usage        Usage
-	cost         float64
-	priced       bool
-	models       []string // raw models, order of first appearance
-	seenModel    map[string]bool
-	unpriced     []string // raw model names with no pricing entry, order of first appearance
-	seenUnpriced map[string]bool
-	messages     int
+	first, last     time.Time
+	usage           Usage
+	cost            float64
+	priced          bool
+	models          []string // raw models, order of first appearance
+	seenModel       map[string]bool
+	unpriced        []string // raw model names with no pricing entry, order of first appearance
+	seenUnpriced    map[string]bool
+	messages        int
+	subUsage        Usage
+	subCost         float64
+	subPriced       bool
+	subUnpriced     []string
+	subSeenUnpriced map[string]bool
+}
+
+// bucketFor returns buckets[day], creating (and recording it in order) if
+// absent.
+func bucketFor(buckets map[time.Time]*dayBucket, order *[]time.Time, day time.Time) *dayBucket {
+	b, ok := buckets[day]
+	if !ok {
+		b = &dayBucket{priced: true, subPriced: true, seenModel: map[string]bool{}, seenUnpriced: map[string]bool{}, subSeenUnpriced: map[string]bool{}}
+		buckets[day] = b
+		*order = append(*order, day)
+	}
+	return b
 }
 
 // sessionDays splits a session into one Row per calendar day of activity.
@@ -36,12 +56,7 @@ func sessionDays(s *Session, days map[time.Time]bool, now time.Time) []Row {
 		if days != nil && !days[day] {
 			continue
 		}
-		b, ok := buckets[day]
-		if !ok {
-			b = &dayBucket{priced: true, seenModel: map[string]bool{}, seenUnpriced: map[string]bool{}}
-			buckets[day] = b
-			order = append(order, day)
-		}
+		b := bucketFor(buckets, &order, day)
 		if b.first.IsZero() || event.TS.Before(b.first) {
 			b.first = event.TS
 		}
@@ -71,6 +86,37 @@ func sessionDays(s *Session, days map[time.Time]bool, now time.Time) []Row {
 		}
 	}
 
+	for _, sub := range s.Subagents {
+		day := subagentDay(sub)
+		if day.IsZero() {
+			continue
+		}
+		if days != nil && !days[day] {
+			continue
+		}
+		b := bucketFor(buckets, &order, day)
+		if b.first.IsZero() || sub.Start.Before(b.first) {
+			b.first = sub.Start
+		}
+		if b.last.IsZero() || sub.End.After(b.last) {
+			b.last = sub.End
+		}
+		b.subUsage.Add(sub.Usage)
+		// sub.Cost is already a sum of only the priced turns (see
+		// readSubagentTranscript), so it's a valid lower bound even when
+		// Priced is false.
+		b.subCost += sub.Cost
+		if !sub.Priced {
+			b.subPriced = false
+			for _, m := range sub.Unpriced {
+				if !b.subSeenUnpriced[m] {
+					b.subSeenUnpriced[m] = true
+					b.subUnpriced = append(b.subUnpriced, m)
+				}
+			}
+		}
+	}
+
 	name := s.Name
 	if name == "" {
 		name = fallbackName(s)
@@ -87,24 +133,40 @@ func sessionDays(s *Session, days map[time.Time]bool, now time.Time) []Row {
 		for i, m := range b.models {
 			models[i] = shortModel(m)
 		}
+
+		// Merged totals: what the day actually cost, subagents included.
+		totalUsage := b.usage
+		totalUsage.Add(b.subUsage)
+		totalUnpriced := b.unpriced
+		for _, m := range b.subUnpriced {
+			if !b.seenUnpriced[m] {
+				b.seenUnpriced[m] = true
+				totalUnpriced = append(totalUnpriced, m)
+			}
+		}
+
 		rows = append(rows, Row{
-			Date:     day,
-			Harness:  s.Harness,
-			ID:       s.ID,
-			Name:     name,
-			Project:  project,
-			CWD:      s.CWD,
-			Start:    b.first,
-			End:      b.last,
-			Models:   models,
-			Tokens:   b.usage.Total(),
-			Usage:    b.usage,
-			Cost:     b.cost,
-			Priced:   b.priced,
-			Unpriced: b.unpriced,
-			Messages: b.messages,
-			Active:   now.Sub(b.last) < ActiveWindow,
-			Path:     s.Path,
+			Date:             day,
+			Harness:          s.Harness,
+			ID:               s.ID,
+			Name:             name,
+			Project:          project,
+			CWD:              s.CWD,
+			Start:            b.first,
+			End:              b.last,
+			Models:           models,
+			Tokens:           totalUsage.Total(),
+			Usage:            totalUsage,
+			Cost:             b.cost + b.subCost,
+			Priced:           b.priced && b.subPriced,
+			Unpriced:         totalUnpriced,
+			SubagentUsage:    b.subUsage,
+			SubagentCost:     b.subCost,
+			SubagentPriced:   b.subPriced,
+			SubagentUnpriced: b.subUnpriced,
+			Messages:         b.messages,
+			Active:           now.Sub(b.last) < ActiveWindow,
+			Path:             s.Path,
 		})
 	}
 	return rows

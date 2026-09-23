@@ -139,6 +139,83 @@ func TestSessionDaysCostMixingPricedTrueWithoutUnknownModel(t *testing.T) {
 	}
 }
 
+func TestSessionDaysFoldsSubagentCost(t *testing.T) {
+	s := &Session{
+		CWD: "/tmp/x",
+		Events: []Event{
+			{TS: mkTS(2026, 1, 1, 9, 0), Model: "claude-sonnet-4-5", Usage: Usage{Input: 1_000_000}},
+		},
+		Subagents: []SubagentTranscript{
+			{
+				ID:       "a1",
+				Models:   []string{"claude-sonnet-4-5"},
+				Usage:    Usage{Input: 2_000_000},
+				Cost:     *price("claude-sonnet-4-5", Usage{Input: 2_000_000}),
+				Priced:   true,
+				Messages: 4,
+				Start:    mkTS(2026, 1, 1, 9, 5),
+				End:      mkTS(2026, 1, 1, 9, 6),
+			},
+		},
+	}
+	rows := sessionDays(s, nil, mkTS(2026, 1, 1, 10, 0))
+	if len(rows) != 1 {
+		t.Fatalf("got %d rows, want 1", len(rows))
+	}
+	r := rows[0]
+
+	mainCost := *price("claude-sonnet-4-5", Usage{Input: 1_000_000})
+	subCost := *price("claude-sonnet-4-5", Usage{Input: 2_000_000})
+
+	if r.SubagentCost != subCost {
+		t.Errorf("SubagentCost = %v, want %v", r.SubagentCost, subCost)
+	}
+	if !r.SubagentPriced {
+		t.Errorf("SubagentPriced = false, want true")
+	}
+	wantTotal := mainCost + subCost
+	if r.Cost != wantTotal {
+		t.Errorf("Cost = %v, want %v (main + subagent, merged)", r.Cost, wantTotal)
+	}
+	wantUsage := Usage{Input: 3_000_000}
+	if r.Usage != wantUsage {
+		t.Errorf("Usage = %+v, want %+v", r.Usage, wantUsage)
+	}
+	// Subagent-only messages don't inflate the conversation's own message count.
+	if r.Messages != 1 {
+		t.Errorf("Messages = %d, want 1 (subagent turns aren't conversation)", r.Messages)
+	}
+}
+
+func TestSessionDaysSubagentUnpricedModelDowngradesPriced(t *testing.T) {
+	s := &Session{
+		CWD: "/tmp/x",
+		Events: []Event{
+			{TS: mkTS(2026, 1, 1, 9, 0), Model: "claude-sonnet-4-5", Usage: Usage{Input: 100}},
+		},
+		Subagents: []SubagentTranscript{
+			{
+				ID:       "a1",
+				Models:   []string{"some-unknown-model"},
+				Usage:    Usage{Input: 5},
+				Priced:   false,
+				Unpriced: []string{"some-unknown-model"},
+				Messages: 1,
+				Start:    mkTS(2026, 1, 1, 9, 1),
+				End:      mkTS(2026, 1, 1, 9, 1),
+			},
+		},
+	}
+	rows := sessionDays(s, nil, mkTS(2026, 1, 1, 10, 0))
+	r := rows[0]
+	if r.Priced {
+		t.Errorf("Priced = true, want false (unpriced subagent model)")
+	}
+	if len(r.Unpriced) != 1 || r.Unpriced[0] != "some-unknown-model" {
+		t.Errorf("Unpriced = %v, want [some-unknown-model]", r.Unpriced)
+	}
+}
+
 func TestSessionDaysUnknownModelZeroUsageStaysPriced(t *testing.T) {
 	s := &Session{
 		CWD: "/tmp/x",

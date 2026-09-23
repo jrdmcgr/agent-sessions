@@ -94,6 +94,59 @@ func TestShowClaudeRecord(t *testing.T) {
 	}
 }
 
+// TestShowRollsUpSubagentCost: `show` on a session with a subagents/ dir
+// reports totals that include the subagent spend, plus the isolated
+// subagent_* breakdown and a per-agent Subagents[] entry.
+func TestShowRollsUpSubagentCost(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "projects", "-Users-x-Code-proj")
+	main := `{"type":"user","uuid":"u1","cwd":"/Users/x/Code/proj","sessionId":"sid","timestamp":"2026-09-22T12:00:00Z","message":{"content":"run the batches"}}
+{"type":"assistant","uuid":"a1","sessionId":"sid","timestamp":"2026-09-22T12:00:10Z","message":{"model":"claude-sonnet-5","content":[{"type":"text","text":"ok"}],"usage":{"input_tokens":1000000,"output_tokens":0}}}
+`
+	path := writeFile(t, dir, "sid.jsonl", main)
+
+	subDir := subagentsDir(path)
+	writeFile(t, subDir, "agent-a1.meta.json", `{"description":"batch 1","name":"bugtrace-batch1","agentType":"fork"}`)
+	writeFile(t, subDir, "agent-a1.jsonl", `{"type":"assistant","isSidechain":true,"timestamp":"2026-09-22T12:00:20Z","message":{"model":"claude-sonnet-5","usage":{"input_tokens":2000000,"output_tokens":0}}}
+`)
+
+	rec, code := decodeRecord(t, []string{path})
+	if code != 0 {
+		t.Fatalf("exit = %d", code)
+	}
+
+	mainCost := *price("claude-sonnet-5", Usage{Input: 1_000_000})
+	subCost := *price("claude-sonnet-5", Usage{Input: 2_000_000})
+
+	if rec.SubagentCount != 1 {
+		t.Errorf("subagent_count = %d, want 1", rec.SubagentCount)
+	}
+	if rec.SubagentCost != subCost {
+		t.Errorf("subagent_cost = %v, want %v", rec.SubagentCost, subCost)
+	}
+	if !rec.SubagentPriced {
+		t.Errorf("subagent_priced = false, want true")
+	}
+	wantTotal := mainCost + subCost
+	if rec.Cost != wantTotal {
+		t.Errorf("cost = %v, want %v (session cost must include subagents)", rec.Cost, wantTotal)
+	}
+	// The main conversation's own message/renderable counts aren't inflated
+	// by subagent turns.
+	if rec.MessageCount != 2 {
+		t.Errorf("message_count = %d, want 2", rec.MessageCount)
+	}
+	if len(rec.Subagents) != 1 {
+		t.Fatalf("subagents len = %d, want 1", len(rec.Subagents))
+	}
+	sub := rec.Subagents[0]
+	if sub.ID != "a1" || sub.Name != "bugtrace-batch1" || sub.Description != "batch 1" || sub.AgentType != "fork" {
+		t.Errorf("subagent record = %+v", sub)
+	}
+	if sub.Cost != subCost {
+		t.Errorf("subagent cost = %v, want %v", sub.Cost, subCost)
+	}
+}
+
 // TestShowOmitsMessagesByDefault: without --messages the array is absent.
 func TestShowOmitsMessagesByDefault(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "projects", "-Users-x-Code-proj")

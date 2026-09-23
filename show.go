@@ -13,31 +13,59 @@ import (
 // sessionRecord is the per-session JSON emitted by `sessions show`. It is the
 // contract both consumers (note-archiver, memory-logger) bind to. Field order
 // here is the emitted key order. See docs/plans/002-extract-archive-session.md.
+//
+// Usage/Tokens/Cost/Priced are totals including any subagents this session
+// spawned (Task tool calls write their own transcript files Claude Code
+// never rolls into the parent's own usage) -- "what did this session cost me"
+// should mean everything it caused. Subagent* fields isolate that portion,
+// and Subagents lists each spawned agent individually.
 type sessionRecord struct {
-	Harness         string          `json:"harness"`
-	SessionID       string          `json:"session_id"`
-	Path            string          `json:"path"`
-	CWD             string          `json:"cwd"`
-	Project         string          `json:"project"`
-	GitBranch       string          `json:"git_branch"`
-	Provider        string          `json:"provider"`
-	Model           string          `json:"model"`
-	Models          []string        `json:"models"`
-	Slug            string          `json:"slug"`
-	Version         string          `json:"version"`
-	CustomTitle     string          `json:"custom_title"`
-	AITitle         string          `json:"ai_title"`
-	Name            string          `json:"name"`
-	Summary         string          `json:"summary"`
-	StartedAt       string          `json:"started_at"`
-	EndedAt         string          `json:"ended_at"`
-	MessageCount    int             `json:"message_count"`
-	RenderableCount int             `json:"renderable_count"`
-	Usage           Usage           `json:"usage"`
-	Tokens          int64           `json:"tokens"`
-	Cost            float64         `json:"cost"`
-	Priced          bool            `json:"priced"`
-	Messages        []messageRecord `json:"messages,omitempty"`
+	Harness         string           `json:"harness"`
+	SessionID       string           `json:"session_id"`
+	Path            string           `json:"path"`
+	CWD             string           `json:"cwd"`
+	Project         string           `json:"project"`
+	GitBranch       string           `json:"git_branch"`
+	Provider        string           `json:"provider"`
+	Model           string           `json:"model"`
+	Models          []string         `json:"models"`
+	Slug            string           `json:"slug"`
+	Version         string           `json:"version"`
+	CustomTitle     string           `json:"custom_title"`
+	AITitle         string           `json:"ai_title"`
+	Name            string           `json:"name"`
+	Summary         string           `json:"summary"`
+	StartedAt       string           `json:"started_at"`
+	EndedAt         string           `json:"ended_at"`
+	MessageCount    int              `json:"message_count"`
+	RenderableCount int              `json:"renderable_count"`
+	Usage           Usage            `json:"usage"`
+	Tokens          int64            `json:"tokens"`
+	Cost            float64          `json:"cost"`
+	Priced          bool             `json:"priced"`
+	SubagentCount   int              `json:"subagent_count"`
+	SubagentUsage   Usage            `json:"subagent_usage"`
+	SubagentTokens  int64            `json:"subagent_tokens"`
+	SubagentCost    float64          `json:"subagent_cost"`
+	SubagentPriced  bool             `json:"subagent_priced"`
+	Subagents       []subagentRecord `json:"subagents,omitempty"`
+	Messages        []messageRecord  `json:"messages,omitempty"`
+}
+
+// subagentRecord is one spawned subagent's summary in a sessionRecord.
+type subagentRecord struct {
+	ID          string   `json:"id"`
+	Name        string   `json:"name,omitempty"`
+	Description string   `json:"description,omitempty"`
+	AgentType   string   `json:"agent_type,omitempty"`
+	Models      []string `json:"models"`
+	Usage       Usage    `json:"usage"`
+	Tokens      int64    `json:"tokens"`
+	Cost        float64  `json:"cost"`
+	Priced      bool     `json:"priced"`
+	Messages    int      `json:"messages"`
+	StartedAt   string   `json:"started_at"`
+	EndedAt     string   `json:"ended_at"`
 }
 
 // messageRecord is one renderable user/assistant message in a sessionRecord.
@@ -264,6 +292,41 @@ func buildRecord(s *Session, withMessages bool) sessionRecord {
 			rec.Messages = append(rec.Messages, mr)
 		}
 	}
+
+	rec.SubagentPriced = true
+	for _, sub := range s.Subagents {
+		rec.SubagentUsage.Add(sub.Usage)
+		// sub.Cost already sums only the priced turns (readSubagentTranscript),
+		// a valid lower bound even when sub.Priced is false.
+		rec.SubagentCost += sub.Cost
+		if !sub.Priced {
+			rec.SubagentPriced = false
+		}
+		rec.Subagents = append(rec.Subagents, subagentRecord{
+			ID:          sub.ID,
+			Name:        sub.Name,
+			Description: sub.Description,
+			AgentType:   sub.AgentType,
+			Models:      sub.Models,
+			Usage:       sub.Usage,
+			Tokens:      sub.Usage.Total(),
+			Cost:        sub.Cost,
+			Priced:      sub.Priced,
+			Messages:    sub.Messages,
+			StartedAt:   formatTS(sub.Start),
+			EndedAt:     formatTS(sub.End),
+		})
+	}
+	rec.SubagentCount = len(s.Subagents)
+	rec.SubagentTokens = rec.SubagentUsage.Total()
+
+	// Session totals include subagents: "what did this cost me" means
+	// everything the session caused, not just its own transcript.
+	rec.Usage.Add(rec.SubagentUsage)
+	rec.Cost += rec.SubagentCost
+	if !rec.SubagentPriced {
+		rec.Priced = false
+	}
 	rec.Tokens = rec.Usage.Total()
 	rec.Model = lastModel
 	rec.StartedAt = firstRaw
@@ -327,4 +390,13 @@ func runShow(argv []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	return 0
+}
+
+// formatTS formats t in the same layout Claude Code transcript timestamps
+// carry (RFC3339 with milliseconds, UTC), or "" for the zero value.
+func formatTS(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.UTC().Format("2006-01-02T15:04:05.000Z")
 }

@@ -110,5 +110,6 @@ func readClaudeSession(path string) *Session {
 		Provider:    "anthropic",
 		GitBranch:   gitBranch,
 		Events:      events,
+		Subagents:   readSubagents(path),
 	}
 }

@@ -95,9 +95,40 @@ type Session struct {
 	Provider    string // last provider seen; "" if absent
 	GitBranch   string // "" if the transcript carries no branch
 	Events      []Event
+	// Subagents holds every Task/Agent subagent Claude Code spawned during
+	// this session, read from the sibling "<session-id>/subagents/"
+	// directory. nil for pi sessions and Claude sessions that spawned none.
+	// Their cost/usage is not part of Events; consumers that want an
+	// accurate total must fold Subagents in themselves (sessionDays and
+	// buildRecord both do).
+	Subagents []SubagentTranscript
+}
+
+// SubagentTranscript is one Task/Agent subagent spawned by a Claude Code
+// session (Claude Code writes each one to its own transcript file rather
+// than inlining it, unlike the older isSidechain-in-main-file shape). Cost
+// here is real spend the parent session caused but that its own transcript
+// never records.
+type SubagentTranscript struct {
+	ID          string // agent id, from the "agent-<id>.jsonl" filename
+	Name        string // meta.json "name" (the spawning tool call's label); "" if absent
+	Description string // meta.json "description"; "" if absent
+	AgentType   string // meta.json "agentType" (e.g. "fork", "general-purpose", "Explore"); "" if absent
+	Path        string
+	Models      []string // raw model ids, order of first use
+	Usage       Usage
+	Cost        float64
+	Priced      bool     // false if any turn used an unpriced model
+	Unpriced    []string // raw model names with no pricing entry
+	Messages    int
+	Start, End  time.Time
 }
 
 // Row is one session-day: a session's activity within a single calendar day.
+// Usage/Cost/Priced/Unpriced are totals including any subagent activity that
+// fell on this day (see Subagent* below for the isolated portion) — the
+// number someone scanning the table for "what did this cost me" wants by
+// default.
 type Row struct {
 	Date     time.Time // local midnight, from dayOf
 	Harness  string
@@ -111,11 +142,20 @@ type Row struct {
 	Tokens   int64
 	Usage    Usage
 	Cost     float64
-	Priced   bool     // false if any event used an unpriced model
+	Priced   bool     // false if any event or subagent used an unpriced model
 	Unpriced []string // raw model names (pre-shortModel) that had no pricing entry
 	Messages int
 	Active   bool
 	Path     string
+
+	// SubagentUsage/SubagentCost/SubagentPriced/SubagentUnpriced isolate the
+	// portion of the totals above that came from spawned subagents (Task
+	// tool calls), so a consumer can report "$X, $Y of it subagents" instead
+	// of a single merged number that hides where the spend went.
+	SubagentUsage    Usage
+	SubagentCost     float64
+	SubagentPriced   bool
+	SubagentUnpriced []string
 }
 
 // dayOf truncates t to local midnight. All "date" values in this program are

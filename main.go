@@ -15,7 +15,8 @@ import (
 )
 
 // jsonRow is the on-the-wire shape for --json output. Field order here is
-// the emitted key order.
+// the emitted key order. Usage/Tokens/Cost/Priced include subagent spend;
+// SubagentCost/SubagentUsage isolate that portion (see Row).
 type jsonRow struct {
 	Date            string   `json:"date"`
 	Harness         string   `json:"harness"`
@@ -30,6 +31,9 @@ type jsonRow struct {
 	Usage           Usage    `json:"usage"`
 	Cost            float64  `json:"cost"`
 	Priced          bool     `json:"priced"`
+	SubagentUsage   Usage    `json:"subagent_usage"`
+	SubagentCost    float64  `json:"subagent_cost"`
+	SubagentPriced  bool     `json:"subagent_priced"`
 	Messages        int      `json:"messages"`
 	Active          bool     `json:"active"`
 	Path            string   `json:"path"`
@@ -178,6 +182,9 @@ func writeJSON(w io.Writer, rows []Row) {
 			Usage:           r.Usage,
 			Cost:            r.Cost,
 			Priced:          r.Priced,
+			SubagentUsage:   r.SubagentUsage,
+			SubagentCost:    r.SubagentCost,
+			SubagentPriced:  r.SubagentPriced,
 			Messages:        r.Messages,
 			Active:          r.Active,
 			Path:            r.Path,
