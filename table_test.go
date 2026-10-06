@@ -2,8 +2,11 @@ package main
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 func mkTestRows() []Row {
@@ -96,6 +99,24 @@ func TestRenderTableNoDateAllPriced(t *testing.T) {
 	}
 	if errW.String() != "" {
 		t.Errorf("errW = %q, want empty", errW.String())
+	}
+}
+
+// A narrow terminal must not leave a table for the terminal to hard-wrap.
+// Exercise both column layouts and a long unbroken cell through the real renderer.
+func TestRenderTableFitsTerminalWidth(t *testing.T) {
+	for _, showDate := range []bool{false, true} {
+		for _, width := range []int{80, 120} {
+			rows := mkTestRows()
+			rows[1].Name = strings.Repeat("long-session-name", 5)
+			var out, errOut bytes.Buffer
+			renderTableWithWidth(&out, &errOut, rows, showDate, false, width)
+			for _, line := range strings.Split(strings.TrimSuffix(out.String(), "\n"), "\n") {
+				if got := lipgloss.Width(line); got > width {
+					t.Errorf("showDate=%v width=%d: line is %d columns wide", showDate, width, got)
+				}
+			}
+		}
 	}
 }
 

@@ -3,12 +3,14 @@ package main
 import (
 	"fmt"
 	"io"
+	"os"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
+	"github.com/charmbracelet/x/term"
 	"github.com/muesli/termenv"
 )
 
@@ -17,6 +19,19 @@ import (
 // (stderr in production). plain disables Unicode borders and color styling
 // in favor of ASCII borders, for piping into cut/awk/grep. Ports render_table.
 func renderTable(w, errW io.Writer, rows []Row, showDate, plain bool) {
+	// Query on every invocation, after a monitor switch or terminal resize.
+	// Non-terminals keep their content-sized, parseable output.
+	width := 0
+	if f, ok := unwrapWriter(w).(*os.File); ok && isTerminalWriter(w) {
+		if columns, _, err := term.GetSize(f.Fd()); err == nil && columns > 0 {
+			width = columns
+		}
+	}
+	renderTableWithWidth(w, errW, rows, showDate, plain, width)
+}
+
+// width is zero for content-sized output, positive for a terminal constraint.
+func renderTableWithWidth(w, errW io.Writer, rows []Row, showDate, plain bool, width int) {
 	if len(rows) == 0 {
 		fmt.Fprint(w, "No sessions found.\n")
 		return
@@ -133,6 +148,9 @@ func renderTable(w, errW io.Writer, rows []Row, showDate, plain bool) {
 			}
 			return cellStyle
 		})
+	if width > 0 {
+		t.Width(width)
+	}
 
 	fmt.Fprintln(w, t.Render())
 
