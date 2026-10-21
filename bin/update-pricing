@@ -24,20 +24,24 @@ curl -fsSL "$SOURCE_URL" -o "$JSON"
 # lookup explicitly. Add a new line here (and only here) to track a new
 # model — the Go map below is fully generated from this list.
 MODELS='
+claude-opus-5-5|claude-opus-5-5
 claude-opus-5|claude-opus-5
 claude-opus-4-8|claude-opus-4-8
 claude-opus-4-7|claude-opus-4-7
 claude-opus-4-1|claude-opus-4-1
 claude-opus-4|claude-opus-4-20250514
+claude-sonnet-5-5|claude-sonnet-5-5
 claude-sonnet-5|claude-sonnet-5
 claude-sonnet-4-5|claude-sonnet-4-5
 claude-sonnet-4|claude-sonnet-4-20250514
+claude-haiku-5-5|claude-haiku-5-5
 claude-haiku-4-5|claude-haiku-4-5
 claude-3-5-haiku|anthropic.claude-3-5-haiku-20241022-v1:0
 '
 
 rows=""
 missing=""
+kept=""
 while IFS='|' read -r ourkey srckey; do
 	[ -z "$ourkey" ] && continue
 	# Each field inlines its own round-to-6-decimals formula rather than
@@ -57,7 +61,15 @@ while IFS='|' read -r ourkey srckey; do
 		| @tsv
 	' "$JSON")"
 	if [ -z "$rates" ]; then
-		missing="$missing$ourkey (source key \"$srckey\" not found)\n"
+		# LiteLLM drops retired models; keep the row we already have so
+		# old sessions stay priced.
+		existing="$(grep -E "^[[:space:]]+\"$ourkey\":" "$PRICING_GO" | head -1 | sed 's/^[[:space:]]*//' || true)"
+		if [ -n "$existing" ]; then
+			rows="$rows\t$existing\n"
+			kept="$kept$ourkey (not in source; kept existing row)\n"
+		else
+			missing="$missing$ourkey (source key \"$srckey\" not found)\n"
+		fi
 		continue
 	fi
 	in=$(printf '%s' "$rates" | cut -f1)
@@ -69,6 +81,9 @@ done <<EOF
 $MODELS
 EOF
 
+if [ -n "$kept" ]; then
+	printf 'note: kept existing pricing for:\n%b' "$kept" >&2
+fi
 if [ -n "$missing" ]; then
 	printf 'warning: could not find pricing for:\n%b' "$missing" >&2
 fi
