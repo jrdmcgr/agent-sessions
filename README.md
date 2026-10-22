@@ -4,7 +4,13 @@ List pi and Claude Code coding-agent sessions by date range, with token counts, 
 
 ## Install
 
-### A. Install script (no Go required)
+### A. Homebrew
+
+```bash
+brew install jrdmcgr/formulae/agent-sessions
+```
+
+### B. Install script (no Go required)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/jrdmcgr/agent-sessions/main/scripts/install.sh | sh
@@ -12,13 +18,13 @@ curl -fsSL https://raw.githubusercontent.com/jrdmcgr/agent-sessions/main/scripts
 
 Detects your OS and architecture, downloads the matching prebuilt binary from the latest GitHub Release, verifies its checksum, and installs `sessions` to `~/.local/bin` (or `/usr/local/bin` if needed).
 
-### B. `go install` (Go 1.22+)
+### C. `go install` (Go 1.22+)
 
 ```bash
 go install github.com/jrdmcgr/agent-sessions@latest
 ```
 
-### C. Manual download
+### D. Manual download
 
 Download a prebuilt binary from the [Releases page](https://github.com/jrdmcgr/agent-sessions/releases). Binaries are named `sessions_<version>_<os>_<arch>.tar.gz` for `darwin`/`linux` × `amd64`/`arm64`. Each release includes a `checksums.txt` file to verify the asset:
 
